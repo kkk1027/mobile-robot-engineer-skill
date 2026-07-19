@@ -10,8 +10,28 @@ from pathlib import Path
 from typing import Any
 
 
-FIELDS = ("ros", "languages", "frameworks", "packages", "interfaces", "features")
-SAFETY_FEATURES = {"command_timeout", "emergency_stop", "watchdog"}
+FIELDS = ("ros", "languages", "frameworks", "packages", "package_roles", "interfaces", "features")
+SEMANTIC_FIELDS = tuple(field for field in FIELDS if field != "packages")
+SAFETY_FEATURES = {"command_timeout", "emergency_stop", "watchdog", "command_arbitration"}
+FRAMEWORK_ALIASES = {
+    "ydlidar_ros2_driver": {"ydlidar"},
+    "flask_socketio": {"flask", "socketio"},
+    "yolov8": {"yolo"},
+    "yolov8n": {"yolo"},
+}
+FEATURE_ALIASES = {
+    "slam": {"mapping"},
+    "known_map_navigation": {"navigation"},
+    "waypoint_patrol": {"patrol"},
+    "optional_human_following": {"human_following"},
+}
+
+
+def configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def load_json(path: Path) -> dict[str, Any]:
@@ -21,8 +41,11 @@ def load_json(path: Path) -> dict[str, Any]:
     return value
 
 
-def normalize_value(value: Any) -> str:
-    return str(value).strip().lower().replace("-", "_").replace(" ", "_")
+def normalize_value(value: Any, field: str | None = None) -> str:
+    normalized = str(value).strip().lower().replace("-", "_").replace(" ", "_")
+    if field == "interfaces" and normalized:
+        normalized = "/" + normalized.lstrip("/")
+    return normalized
 
 
 def normalize_list(value: Any, field: str) -> set[str]:
@@ -36,7 +59,47 @@ def normalize_list(value: Any, field: str) -> set[str]:
             item = item.get("name")
         if item is None:
             continue
-        output.add(normalize_value(item))
+        output.add(normalize_value(item, field))
+    return output
+
+
+def interface_role(value: str) -> str:
+    bare = value.lstrip("/")
+    if "cmd_vel" in bare or "twist" in bare:
+        return "motion_command"
+    if "emergency_stop" in bare or "e_stop" in bare:
+        return "emergency_stop"
+    if "diagnostic" in bare or "health" in bare:
+        return "diagnostics"
+    if "tf_static" in bare:
+        return "tf_static"
+    if bare == "tf" or bare.endswith("/tf"):
+        return "tf"
+    if "odom" in bare:
+        return "odometry"
+    if "imu" in bare:
+        return "imu"
+    if "scan" in bare or "laser" in bare:
+        return "laser_scan"
+    if bare == "map" or bare.endswith("/map"):
+        return "map"
+    if "mode" in bare:
+        return "operating_mode"
+    return value
+
+
+def semantic_list(value: Any, field: str) -> set[str]:
+    literal = normalize_list(value, field)
+    output: set[str] = set()
+    for item in literal:
+        if field == "frameworks":
+            output.update(FRAMEWORK_ALIASES.get(item, {item}))
+        elif field == "features":
+            output.update(FEATURE_ALIASES.get(item, {item}))
+        elif field == "interfaces":
+            output.add(interface_role(item))
+        else:
+            output.add(item)
     return output
 
 
@@ -48,23 +111,26 @@ def evidence_for(inventory: dict[str, Any], field: str, value: str) -> list[dict
     if not isinstance(category, dict):
         return []
     for raw_key, hits in category.items():
-        if normalize_value(raw_key) == value and isinstance(hits, list):
+        if normalize_value(raw_key, field) == value and isinstance(hits, list):
             return hits
     return []
 
 
 def compare(solution: dict[str, Any], inventory: dict[str, Any]) -> dict[str, Any]:
     comparisons: dict[str, Any] = {}
-    total_expected = 0
-    total_matched = 0
+    semantic_comparisons: dict[str, Any] = {}
+    exact_expected = 0
+    exact_matched = 0
+    semantic_expected = 0
+    semantic_matched = 0
     for field in FIELDS:
         expected = normalize_list(solution.get(field, []), field)
         actual = normalize_list(inventory.get(field, []), field)
         matched = sorted(expected & actual)
         missing = sorted(expected - actual)
         extra = sorted(actual - expected)
-        total_expected += len(expected)
-        total_matched += len(matched)
+        exact_expected += len(expected)
+        exact_matched += len(matched)
         comparisons[field] = {
             "expected": sorted(expected),
             "actual": sorted(actual),
@@ -77,23 +143,45 @@ def compare(solution: dict[str, Any], inventory: dict[str, Any]) -> dict[str, An
             },
         }
 
-    expected_base = normalize_value(solution.get("base_type", ""))
+    for field in SEMANTIC_FIELDS:
+        expected = semantic_list(solution.get(field, []), field)
+        actual = semantic_list(inventory.get(field, []), field)
+        matched = sorted(expected & actual)
+        semantic_expected += len(expected)
+        semantic_matched += len(matched)
+        semantic_comparisons[field] = {
+            "expected_roles": sorted(expected),
+            "actual_roles": sorted(actual),
+            "matched_roles": matched,
+            "missing_static_roles": sorted(expected - actual),
+            "extra_inventory_roles": sorted(actual - expected),
+        }
+
+    expected_base = normalize_value(solution.get("base_type", ""), "base_types")
     actual_bases = normalize_list(inventory.get("base_types", []), "base_types")
     base_match = bool(expected_base and expected_base in actual_bases)
     if expected_base:
-        total_expected += 1
-        total_matched += int(base_match)
+        exact_expected += 1
+        exact_matched += int(base_match)
+        semantic_expected += 1
+        semantic_matched += int(base_match)
     expected_features = normalize_list(solution.get("features", []), "features")
     safety_expected = expected_features & SAFETY_FEATURES
     safety_missing = set(comparisons["features"]["missing_static_evidence"]) & SAFETY_FEATURES
-    score = 1.0 if total_expected == 0 else total_matched / total_expected
+    exact_score = 1.0 if exact_expected == 0 else exact_matched / exact_expected
+    semantic_score = 1.0 if semantic_expected == 0 else semantic_matched / semantic_expected
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "summary": {
-            "expected_items": total_expected,
-            "matched_items": total_matched,
-            "static_match_ratio": round(score, 4),
+            "exact_expected_items": exact_expected,
+            "exact_matched_items": exact_matched,
+            "exact_static_match_ratio": round(exact_score, 4),
+            "semantic_expected_items": semantic_expected,
+            "semantic_matched_items": semantic_matched,
+            "semantic_static_match_ratio": round(semantic_score, 4),
+            "static_match_ratio": round(semantic_score, 4),
             "manual_review_required": True,
+            "package_name_overlap_is_informational": True,
             "safety_expectations": sorted(safety_expected),
             "safety_missing_static_evidence": sorted(safety_missing),
         },
@@ -104,9 +192,14 @@ def compare(solution: dict[str, Any], inventory: dict[str, Any]) -> dict[str, An
             "evidence": evidence_for(inventory, "base_types", expected_base) if base_match else [],
         },
         "comparisons": comparisons,
+        "semantic_comparisons": semantic_comparisons,
         "interpretation": [
             "missing_static_evidence is not proof that the source lacks the feature",
             "extra_in_inventory is not automatically a solution error",
+            "package-name overlap has zero weight in the semantic ratio",
+            "interface names are projected to coarse responsibilities for the semantic ratio",
+            "known framework and feature aliases are projected before semantic comparison",
+            "neither static ratio is a final quality score",
             "manually inspect runtime wiring, generated files, firmware, and hardware behavior",
         ],
     }
@@ -122,6 +215,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_stdio()
     args = parse_args(argv or sys.argv[1:])
     try:
         solution = load_json(args.solution.resolve())

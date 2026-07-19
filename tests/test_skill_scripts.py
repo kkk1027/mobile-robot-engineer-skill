@@ -43,6 +43,82 @@ class SkillScriptTests(unittest.TestCase):
             self.assertIn(interface, data["interfaces"])
         for feature in ("command_timeout", "emergency_stop", "watchdog", "simulation"):
             self.assertIn(feature, data["features"])
+        for role in ("bringup", "control", "description", "monitoring", "simulation"):
+            self.assertIn(role, data["package_roles"])
+        self.assertNotIn("can", data["hardware"])
+        self.assertEqual(data["security_findings"], [])
+
+    def test_inventory_redacts_possible_secret(self) -> None:
+        fake_value = "unit-fixture-value-1234"
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            (root / "config.py").write_text(
+                f'api_token = "{fake_value}"  # micro_ros_agent\n',
+                encoding="utf-8",
+            )
+            result = run_script("inspect_ros_workspace.py", str(root))
+        self.assertEqual(result.returncode, 0, result.stderr)
+        self.assertNotIn(fake_value, result.stdout)
+        findings = json.loads(result.stdout)["security_findings"]
+        self.assertEqual(len(findings), 1)
+        self.assertEqual(findings[0]["excerpt"], "[REDACTED]")
+
+    def test_intake_levels_and_test_default_gate(self) -> None:
+        intake = {
+            "allowed_input": {
+                "hardware_devices": {
+                    "base": {
+                        "type": "two_wheel_differential",
+                        "wheel_radius_m": {
+                            "value": 0.05,
+                            "provenance": "test_default_simulation_only",
+                        },
+                        "wheel_separation_m": {
+                            "value": 0.30,
+                            "provenance": "user_confirmed",
+                        },
+                    },
+                    "current_upper_compute": "industrial PC",
+                    "drive": {
+                        "motor": "DC geared motor",
+                        "driver": "dual H bridge",
+                    },
+                    "encoders": {"counts_per_wheel_revolution": 2048},
+                    "sensors": {
+                        "lidar": {
+                            "model": "generic 2D lidar",
+                            "xyz_m": [0.1, 0.0, 0.2],
+                            "rpy_rad": [0.0, 0.0, 0.0],
+                        }
+                    },
+                    "battery": {"rated_voltage_v": 24},
+                    "physical_emergency_stop": {
+                        "value": "unresolved",
+                        "provenance": "unresolved_real",
+                    },
+                    "network": "Ethernet and UART",
+                },
+                "technical_stack": ["ROS 2", "C++", "Gazebo"],
+                "project_direction": ["indoor autonomous navigation"],
+                "execution_boundary": {"test_profile": "simulation acceptance"},
+            }
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "intake.json"
+            path.write_text(json.dumps(intake), encoding="utf-8")
+            result = run_script(
+                "validate_project_intake.py",
+                str(path),
+                "--target-level",
+                "L3",
+            )
+        self.assertEqual(result.returncode, 1, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertTrue(data["level_eligibility"]["L1"]["input_ready"])
+        self.assertTrue(data["level_eligibility"]["L2"]["input_ready"])
+        self.assertFalse(data["level_eligibility"]["L3"]["input_ready"])
+        self.assertIn("hardware_devices.base.wheel_radius_m", data["unsafe_provenance_paths"])
+        self.assertNotIn("unit-fixture", result.stdout)
 
     def test_valid_contract_passes(self) -> None:
         result = run_script("validate_robot_contract.py", str(CONTRACT))
@@ -89,8 +165,33 @@ class SkillScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         data = json.loads(result.stdout)
         self.assertTrue(data["base_type"]["matched"])
-        self.assertGreaterEqual(data["summary"]["static_match_ratio"], 0.9)
+        self.assertGreaterEqual(data["summary"]["semantic_static_match_ratio"], 0.9)
+        self.assertTrue(data["summary"]["package_name_overlap_is_informational"])
         self.assertEqual(data["summary"]["safety_missing_static_evidence"], [])
+
+    def test_solution_comparison_normalizes_interface_slashes(self) -> None:
+        solution = json.loads(SOLUTION.read_text(encoding="utf-8"))
+        solution["interfaces"] = [name.lstrip("/") for name in solution["interfaces"]]
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inventory_path = root / "inventory.json"
+            solution_path = root / "solution.json"
+            solution_path.write_text(json.dumps(solution), encoding="utf-8")
+            scan = run_script(
+                "inspect_ros_workspace.py",
+                str(FIXTURE),
+                "--output",
+                str(inventory_path),
+            )
+            self.assertEqual(scan.returncode, 0, scan.stderr)
+            result = run_script(
+                "compare_solution_to_inventory.py",
+                str(solution_path),
+                str(inventory_path),
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        compared = json.loads(result.stdout)
+        self.assertEqual(compared["comparisons"]["interfaces"]["missing_static_evidence"], [])
 
     def test_reference_links_exist(self) -> None:
         skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")

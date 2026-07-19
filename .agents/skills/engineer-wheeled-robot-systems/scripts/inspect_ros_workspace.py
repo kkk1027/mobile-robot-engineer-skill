@@ -54,9 +54,21 @@ FRAMEWORK_SIGNALS = {
     "isaac_sim": [r"\bisaac sim\b", r"\bomni\.isaac\b", r"\bisaac_ros\b"],
     "mujoco": [r"\bmujoco\b", r"\bMJCF\b"],
     "move_base": [r"\bmove_base\b"],
+    "qt5": [r"\bQt5\b", r"\bPyQt5\b", r"\bQApplication\b"],
+    "flask": [r"\bFlask\b"],
+    "socketio": [r"\bSocketIO\b", r"\bsocket\.io\b"],
+    "langchain": [r"\blangchain\b"],
+    "langgraph": [r"\blanggraph\b"],
+    "yolo": [r"\bYOLOv?[0-9]*\b", r"\bultralytics\b"],
+    "ydlidar": [r"\bydlidar\b"],
 }
 BASE_SIGNALS = {
-    "differential": [r"\bdiff(?:erential)?[_ -]?drive\b", r"\bdiff_drive_controller\b", r"\b2wd\b", r"\b4wd\b"],
+    "differential": [
+        r"\bdiff(?:erential)?[_ -]?drive\b", r"\bdiff_drive_controller\b",
+        r"\b2wd\b", r"\b4wd\b", r"\bkinematics_inverse\b",
+        r"\b(?:left|right)[_ -]?wheel(?:_speed|_velocity)?\b",
+        r"\bwheel_(?:separation|track|distance)\b",
+    ],
     "skid_steer": [r"\bskid[_ -]?steer\b", r"\bskid4wd\b"],
     "ackermann": [r"\backermann\b", r"\bbicycle model\b", r"\bsteering_angle\b"],
     "mecanum": [r"\bmecanum\b"],
@@ -70,7 +82,7 @@ HARDWARE_SIGNALS = {
     "stm32": [r"\bstm32\b"],
     "esp32": [r"\besp32\b"],
     "teensy": [r"\bteensy\b"],
-    "can": [r"\bCAN(?:-FD)?\b", r"\bsocketcan\b", r"\bcan[0-9]\b"],
+    "can": [r"(?-i:\bCAN(?:-FD)?\b)", r"\bsocketcan\b", r"\bcan[0-9]\b"],
     "serial": [r"\bserial\b", r"\btty(?:USB|ACM)\b", r"\bUART\b"],
     "ethercat": [r"\bethercat\b"],
     "lidar": [r"\blidar\b", r"\blaser_scan\b", r"\bsensor_msgs/(?:msg/)?LaserScan\b"],
@@ -88,7 +100,52 @@ FEATURE_SIGNALS = {
     "mapping": [r"\bslam\b", r"\bmapping\b"],
     "localization": [r"\bamcl\b", r"\blocalization\b", r"\bekf\b"],
     "navigation": [r"\bnav2\b", r"\bmove_base\b", r"\bplanner\b"],
+    "patrol": [r"\bpatrol\b", r"\bmulti[_ -]?waypoint\b", r"\bwaypoint[_ -]?follower\b"],
+    "wheel_imu_fusion": [r"\bwheel.*imu.*(?:fusion|ekf)\b", r"\bimu.*wheel.*(?:fusion|ekf)\b"],
+    "command_arbitration": [r"\b(?:cmd_vel|command)[_ -]?(?:mux|arbitration|arbiter)\b", r"\btwist_mux\b"],
+    "battery_monitoring": [r"\bBatteryState\b", r"\bbattery[_ -]?(?:monitor|voltage|critical|low)\b"],
 }
+PACKAGE_ROLE_SIGNALS = {
+    "interfaces": [r"\brosidl_generate_interfaces\b", r"/(?:msg|srv|action)/", r"\binterface definitions?\b"],
+    "description": [r"\burdf\b", r"\bxacro\b", r"\brobot_description\b"],
+    "bringup": [r"\bbringup\b", r"\blaunch_ros\b", r"\bros2\s+launch\b"],
+    "hardware": [r"\bhardware_interface\b", r"\bmicro[-_]?ros\b", r"\bserial\b", r"\bsocketcan\b"],
+    "localization": [r"\bamcl\b", r"\brobot_localization\b", r"\bekf\b"],
+    "mapping": [r"\bslam\b", r"\bcartographer\b", r"\bmapping\b"],
+    "navigation": [r"\bnav2\b", r"\bmove_base\b", r"\bplanner_server\b"],
+    "control": [r"\bcontroller_manager\b", r"\bPID\b", r"\bkinematics_inverse\b"],
+    "simulation": [r"\bgazebo\b", r"\bros_gz\b", r"\bisaac sim\b", r"\bmujoco\b"],
+    "monitoring": [r"\bdiagnostic_msgs\b", r"\bwatchdog\b", r"\bmonitor(?:ing)?\b"],
+    "tasks": [r"\bpatrol\b", r"\bwaypoint\b", r"\btask[_ -]?(?:manager|orchestrator)\b"],
+    "web": [r"\bFlask\b", r"\bSocketIO\b", r"\bweb[_ -]?(?:server|gateway|ui)\b"],
+    "desktop_gui": [r"\bQt5\b", r"\bPyQt5\b", r"\bQApplication\b"],
+    "ai_planning": [r"\bLangGraph\b", r"\bLangChain\b", r"\bLLM\b"],
+    "human_following": [r"\bhuman[_ -]?follow", r"\bperson[_ -]?(?:follow|track)", r"\bYOLOv?[0-9]*\b"],
+    "sensor_driver": [r"\bydlidar\b", r"\blidar[_ -]?driver\b", r"\bcamera[_ -]?driver\b"],
+}
+SECRET_PATTERNS = (
+    re.compile(
+        r'''\b([A-Za-z_][A-Za-z0-9_]*(?:password|passwd|ssid|api[_-]?key|token|secret)[A-Za-z0-9_]*)\b\s*[:=]\s*["']([^"']{4,})["']''',
+        re.I,
+    ),
+    re.compile(
+        r'''#\s*define\s+([A-Za-z_][A-Za-z0-9_]*(?:password|passwd|ssid|api[_-]?key|token|secret)[A-Za-z0-9_]*)\s+["']([^"']{4,})["']''',
+        re.I,
+    ),
+    re.compile(
+        r'''\b(WiFi\.begin|set_microros_wifi_transports)\s*\(\s*["']([^"']{4,})["']''',
+        re.I,
+    ),
+    re.compile(
+        r'''(?:app\.)?config\s*\[\s*["'](SECRET_KEY|API_KEY|TOKEN)["']\s*\]\s*=\s*["']([^"']{4,})["']''',
+        re.I,
+    ),
+    re.compile(
+        r'''\b(SSID|PASSWORD|PASSWD|API[_-]?KEY|TOKEN|SECRET)\b\s*[:=]\s*([^\s,;|]{4,})''',
+        re.I,
+    ),
+)
+PLACEHOLDER_SECRET = re.compile(r"^(?:example|placeholder|change[_-]?me|your[_-]?|<|\$\{|xxx|test[_-]?(?:only|value|ssid|password))", re.I)
 INTERFACE_KEYWORDS = re.compile(
     r"(create_publisher|create_subscription|create_service|create_client|"
     r"create_server|create_wall_timer|advertise|subscribe|Service|Action|"
@@ -129,6 +186,13 @@ def read_text(path: Path, warnings: list[str]) -> str | None:
     except OSError as exc:
         warnings.append(f"could not read {path}: {exc}")
         return None
+
+
+def configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
 
 
 def package_info(package_xml: Path, root: Path, warnings: list[str]) -> dict[str, Any]:
@@ -190,6 +254,7 @@ def scan_signals(
     text: str,
     file_name: str,
     evidence: dict[str, dict[str, list[dict[str, Any]]]],
+    security_findings: list[dict[str, Any]],
 ) -> set[str]:
     interfaces: set[str] = set()
     interface_window = 0
@@ -199,9 +264,33 @@ def scan_signals(
         "base_types": {key: [re.compile(p, re.I) for p in pats] for key, pats in BASE_SIGNALS.items()},
         "hardware": {key: [re.compile(p, re.I) for p in pats] for key, pats in HARDWARE_SIGNALS.items()},
         "features": {key: [re.compile(p, re.I) for p in pats] for key, pats in FEATURE_SIGNALS.items()},
+        "package_roles": {key: [re.compile(p, re.I) for p in pats] for key, pats in PACKAGE_ROLE_SIGNALS.items()},
     }
     for line_no, line in enumerate(text.splitlines(), start=1):
         stripped = line.strip()
+        secret_on_line = False
+        for pattern in SECRET_PATTERNS:
+            for match in pattern.finditer(line):
+                secret_value = match.group(2).strip()
+                if PLACEHOLDER_SECRET.search(secret_value) or secret_value.startswith(("os.environ", "getenv")):
+                    continue
+                identifier = match.group(1)
+                if (
+                    re.fullmatch(r"[A-Za-z_][A-Za-z0-9_.()]*", secret_value)
+                    and not any(name in identifier.lower() for name in ("ssid", "password", "passwd"))
+                ):
+                    continue
+                example_or_test = bool(re.search(r"(?:^|/)(?:tests?|fixtures?)(?:/|$)|\.(?:example|test)\.", file_name, re.I))
+                security_findings.append({
+                    "file": file_name,
+                    "line": line_no,
+                    "kind": "credential_literal_in_example_or_test" if example_or_test else "possible_hardcoded_secret",
+                    "identifier": identifier,
+                    "excerpt": "[REDACTED]",
+                })
+                secret_on_line = True
+        if secret_on_line:
+            stripped = "[REDACTED POSSIBLE CREDENTIAL LINE]"
         for category, values in compiled_groups.items():
             for value, patterns in values.items():
                 if any(pattern.search(line) for pattern in patterns):
@@ -237,6 +326,7 @@ def inventory(root: Path) -> dict[str, Any]:
     config_files: list[str] = []
     description_files: list[str] = []
     interface_definition_files: list[str] = []
+    security_findings: list[dict[str, Any]] = []
 
     for path in files:
         rel = relative_path(path, root)
@@ -259,13 +349,18 @@ def inventory(root: Path) -> dict[str, Any]:
         text = read_text(path, warnings)
         if text is None:
             continue
-        interfaces.update(scan_signals(text, rel, evidence))
+        interfaces.update(scan_signals(text, rel, evidence, security_findings))
 
     def detected(category: str) -> list[str]:
         return sorted(value for value, hits in evidence.get(category, {}).items() if hits)
 
+    unique_security_findings: dict[tuple[str, int, str], dict[str, Any]] = {}
+    for finding in security_findings:
+        key = (finding["file"], finding["line"], finding["identifier"].lower())
+        unique_security_findings.setdefault(key, finding)
+
     return {
-        "schema_version": 1,
+        "schema_version": 2,
         "root": str(root),
         "ros": detected("ros"),
         "languages": sorted(languages),
@@ -273,6 +368,7 @@ def inventory(root: Path) -> dict[str, Any]:
         "base_types": detected("base_types"),
         "hardware": detected("hardware"),
         "features": detected("features"),
+        "package_roles": detected("package_roles"),
         "packages": sorted(packages, key=lambda item: item["name"]),
         "interfaces": sorted(interfaces),
         "files": {
@@ -288,6 +384,21 @@ def inventory(root: Path) -> dict[str, Any]:
             for category, values in evidence.items()
         },
         "warnings": sorted(set(warnings)),
+        "security_findings": sorted(
+            unique_security_findings.values(),
+            key=lambda item: (item["file"], item["line"], item["identifier"]),
+        ),
+        "security_summary": {
+            "possible_hardcoded_secret": sum(
+                item["kind"] == "possible_hardcoded_secret"
+                for item in unique_security_findings.values()
+            ),
+            "credential_literal_in_example_or_test": sum(
+                item["kind"] == "credential_literal_in_example_or_test"
+                for item in unique_security_findings.values()
+            ),
+            "values_redacted": True,
+        },
     }
 
 
@@ -300,6 +411,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_stdio()
     args = parse_args(argv or sys.argv[1:])
     root = args.path.resolve()
     if not root.is_dir():

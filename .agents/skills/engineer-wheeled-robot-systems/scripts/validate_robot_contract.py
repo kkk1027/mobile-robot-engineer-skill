@@ -24,6 +24,13 @@ SAFETY_KEYS_REAL = {
 }
 
 
+def configure_stdio() -> None:
+    for stream in (sys.stdout, sys.stderr):
+        reconfigure = getattr(stream, "reconfigure", None)
+        if callable(reconfigure):
+            reconfigure(encoding="utf-8", errors="replace")
+
+
 @dataclass(frozen=True)
 class Issue:
     severity: str
@@ -269,6 +276,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
 
 
 def main(argv: list[str] | None = None) -> int:
+    configure_stdio()
     args = parse_args(argv or sys.argv[1:])
     try:
         contract = load_contract(args.contract.resolve())

@@ -4,6 +4,7 @@
   "languages": ["cpp", "python"],
   "frameworks": ["ros2_control", "gazebo"],
   "packages": ["mini_diff_robot"],
+  "package_roles": ["bringup", "control", "description", "monitoring", "simulation"],
   "interfaces": ["/cmd_vel", "/odom", "/diagnostics"],
   "features": ["command_timeout", "emergency_stop", "watchdog", "simulation", "diagnostics"]
 }
