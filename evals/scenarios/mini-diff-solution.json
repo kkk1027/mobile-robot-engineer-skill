@@ -1,0 +1,9 @@
+{
+  "base_type": "differential",
+  "ros": ["ros2"],
+  "languages": ["cpp", "python"],
+  "frameworks": ["ros2_control", "gazebo"],
+  "packages": ["mini_diff_robot"],
+  "interfaces": ["/cmd_vel", "/odom", "/diagnostics"],
+  "features": ["command_timeout", "emergency_stop", "watchdog", "simulation", "diagnostics"]
+}

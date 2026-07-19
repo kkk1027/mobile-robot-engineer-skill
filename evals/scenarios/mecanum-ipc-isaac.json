@@ -1,0 +1,19 @@
+{
+  "scenario_id": "mecanum-ipc-isaac",
+  "user_input": {
+    "task": "仓库搬运 AMR，需要横移、视觉托盘检测和动态避障",
+    "base": "四麦克纳姆轮，每轮独立驱动",
+    "compute": ["x86 industrial PC", "NVIDIA GPU", "motor MCU"],
+    "actuation": "EtherCAT servo drives",
+    "sensors": ["3D LiDAR", "stereo camera", "IMU", "wheel encoders"],
+    "stack": ["ROS 2", "C++", "Isaac Sim"],
+    "deployment": "both",
+    "permissions": "G0-G2"
+  },
+  "expected_routes": {
+    "base_type": "mecanum",
+    "ros": "ros2",
+    "simulator": "isaac_sim",
+    "required_features": ["holonomic_planning", "mecanum_controller", "time_sync", "safety_mux"]
+  }
+}

@@ -1,0 +1,19 @@
+{
+  "scenario_id": "swerve-four-module-mujoco",
+  "user_input": {
+    "task": "验证四模块舵轮底盘的运动学、模块优化和路径跟踪控制",
+    "base": "四个独立驱动和独立转向模块，可横移和原地旋转",
+    "compute": ["Jetson", "four motor controllers"],
+    "actuation": "CAN-FD steering and traction",
+    "sensors": ["absolute steering encoders", "drive encoders", "IMU"],
+    "stack": ["ROS 2", "C++", "MuJoCo"],
+    "deployment": "simulation",
+    "permissions": "G0-G1"
+  },
+  "expected_routes": {
+    "base_type": "swerve",
+    "ros": "ros2",
+    "simulator": "mujoco",
+    "required_features": ["module_state_optimization", "steering_rate_limit", "holonomic_control", "simulation"]
+  }
+}

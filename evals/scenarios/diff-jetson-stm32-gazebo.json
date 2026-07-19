@@ -1,0 +1,19 @@
+{
+  "scenario_id": "diff-jetson-stm32-gazebo",
+  "user_input": {
+    "task": "从零创建室内建图、定位和自主导航机器人，仿真实机共用上层配置",
+    "base": "四轮差速，同侧电机同速",
+    "compute": ["Jetson Orin Nano", "STM32"],
+    "actuation": "CAN 电机驱动器，编码器反馈，MCU 速度闭环",
+    "sensors": ["2D LiDAR", "IMU", "wheel encoders"],
+    "stack": ["ROS 2", "C++", "Python", "Gazebo", "micro-ROS"],
+    "deployment": "both",
+    "permissions": "G1，后续 G2/G3；当前不允许 G4"
+  },
+  "expected_routes": {
+    "base_type": "differential",
+    "ros": "ros2",
+    "simulator": "gazebo",
+    "required_features": ["ros2_control", "command_timeout", "state_estimation", "nav2", "simulation"]
+  }
+}

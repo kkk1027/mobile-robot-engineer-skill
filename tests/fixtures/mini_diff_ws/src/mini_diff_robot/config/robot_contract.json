@@ -1,0 +1,62 @@
+{
+  "schema_version": 1,
+  "system": {
+    "name": "mini_diff_robot",
+    "base_type": "differential",
+    "ros": "ros2",
+    "deployment": "both",
+    "command_dofs": ["vx", "wz"]
+  },
+  "frames": {
+    "edges": [
+      ["map", "odom"],
+      ["odom", "base_link"],
+      ["base_link", "laser"]
+    ],
+    "dynamic_owners": {
+      "map->odom": "localization",
+      "odom->base_link": "base_state_estimator"
+    }
+  },
+  "interfaces": [
+    {
+      "name": "/cmd_vel",
+      "kind": "topic",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "direction": "command",
+      "rate_hz": 20,
+      "max_age_ms": 250,
+      "qos": {"reliability": "reliable", "depth": 1}
+    },
+    {
+      "name": "/odom",
+      "kind": "topic",
+      "type": "nav_msgs/msg/Odometry",
+      "direction": "feedback",
+      "rate_hz": 30,
+      "max_age_ms": 100,
+      "qos": {"reliability": "best_effort", "depth": 5}
+    },
+    {
+      "name": "/diagnostics",
+      "kind": "topic",
+      "type": "diagnostic_msgs/msg/DiagnosticArray",
+      "direction": "diagnostic",
+      "rate_hz": 2,
+      "max_age_ms": 1000,
+      "qos": {"reliability": "reliable", "depth": 10}
+    }
+  ],
+  "timing": {
+    "control_rate_hz": 50,
+    "command_timeout_ms": 250,
+    "stop_timeout_ms": 500,
+    "state_estimation_rate_hz": 30
+  },
+  "safety": {
+    "emergency_stop": true,
+    "hardware_watchdog": true,
+    "command_timeout": true,
+    "motion_requires_authorization": true
+  }
+}

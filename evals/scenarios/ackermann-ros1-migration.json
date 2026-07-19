@@ -1,0 +1,18 @@
+{
+  "scenario_id": "ackermann-ros1-migration",
+  "user_input": {
+    "task": "将现有 ROS 1 室外巡检车逐步迁移到 ROS 2，并保留旧 GNSS 驱动",
+    "base": "前轮阿克曼转向，后轮驱动，不允许原地旋转",
+    "compute": ["x86 industrial PC"],
+    "actuation": "CAN steering and traction controllers",
+    "sensors": ["GNSS RTK", "3D LiDAR", "IMU", "wheel encoders"],
+    "stack": ["ROS 1", "ROS 2", "C++", "Gazebo"],
+    "deployment": "real",
+    "permissions": "G2，变更前确认 G3"
+  },
+  "expected_routes": {
+    "base_type": "ackermann",
+    "ros": "hybrid",
+    "required_features": ["ros1_bridge", "curvature_constrained_planning", "single_writer", "migration_boundary"]
+  }
+}

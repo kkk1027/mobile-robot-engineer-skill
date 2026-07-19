@@ -1,0 +1,99 @@
+{
+  "schema_version": 1,
+  "system": {
+    "name": "diff_jetson_stm32_robot",
+    "base_type": "skid_steer",
+    "ros": "ros2",
+    "deployment": "both",
+    "command_dofs": ["vx", "wz"]
+  },
+  "frames": {
+    "edges": [
+      ["map", "odom"],
+      ["odom", "base_link"],
+      ["base_link", "lidar_link"],
+      ["base_link", "imu_link"]
+    ],
+    "dynamic_owners": {
+      "map->odom": "slam_or_localization",
+      "odom->base_link": "state_estimator"
+    }
+  },
+  "interfaces": [
+    {
+      "name": "/cmd_vel_safe",
+      "kind": "topic",
+      "type": "geometry_msgs/msg/TwistStamped",
+      "direction": "command",
+      "rate_hz": 20,
+      "max_age_ms": 150,
+      "qos": {"reliability": "reliable", "depth": 1}
+    },
+    {
+      "name": "/wheel/odometry",
+      "kind": "topic",
+      "type": "nav_msgs/msg/Odometry",
+      "direction": "feedback",
+      "rate_hz": 100,
+      "max_age_ms": 50,
+      "qos": {"reliability": "best_effort", "depth": 5}
+    },
+    {
+      "name": "/imu/data_raw",
+      "kind": "topic",
+      "type": "sensor_msgs/msg/Imu",
+      "direction": "sensor",
+      "rate_hz": 100,
+      "max_age_ms": 50,
+      "qos": {"reliability": "best_effort", "depth": 5}
+    },
+    {
+      "name": "/scan",
+      "kind": "topic",
+      "type": "sensor_msgs/msg/LaserScan",
+      "direction": "sensor",
+      "rate_hz": 10,
+      "max_age_ms": 200,
+      "qos": {"reliability": "best_effort", "depth": 5}
+    },
+    {
+      "name": "/odom",
+      "kind": "topic",
+      "type": "nav_msgs/msg/Odometry",
+      "direction": "state",
+      "rate_hz": 50,
+      "max_age_ms": 100,
+      "qos": {"reliability": "best_effort", "depth": 5}
+    },
+    {
+      "name": "/diagnostics",
+      "kind": "topic",
+      "type": "diagnostic_msgs/msg/DiagnosticArray",
+      "direction": "diagnostic",
+      "rate_hz": 2,
+      "max_age_ms": 1000,
+      "qos": {"reliability": "reliable", "depth": 10}
+    },
+    {
+      "name": "/safety/estop_state",
+      "kind": "topic",
+      "type": "std_msgs/msg/Bool",
+      "direction": "state",
+      "rate_hz": 10,
+      "max_age_ms": 200,
+      "qos": {"reliability": "reliable", "depth": 1}
+    }
+  ],
+  "timing": {
+    "control_rate_hz": 100,
+    "command_timeout_ms": 150,
+    "stop_timeout_ms": 500,
+    "state_estimation_rate_hz": 50
+  },
+  "safety": {
+    "emergency_stop": true,
+    "hardware_watchdog": true,
+    "command_timeout": true,
+    "motion_requires_authorization": true
+  }
+}
