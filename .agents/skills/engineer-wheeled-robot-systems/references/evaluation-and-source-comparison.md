@@ -10,8 +10,8 @@
 2. 记录来源提交、日期和允许的目录范围；把凭据值完全排除。
 3. 在生成前运行 `validate_project_intake.py`，主动提出缺口问题。用户允许测试默认值时，保留逐字段来源与适用范围。
 4. 冻结补全后的输入及 SHA-256。生成阶段只能读取该输入，不能读取真实源码的包名、节点名、接口名、目录结构、参数、既有修复或历史故障。
-5. 用当前 Skill 独立生成项目，输出 `solution.json`、接口契约、实现、测试和生成记录。
-6. 先执行静态检查、单元测试、构建、仿真和安全闸门；不可用的运行环境必须明确记录为未验证。
+5. 用当前 Skill 独立生成项目，输出 `solution.json`、接口契约、实现、测试、`generation_trace.json` 和 `runtime_graph.json`。用 `validate_generation_trace.py` 检查每个输入事实的处置。
+6. 先执行静态检查、单元测试、运行图检查、构建、仿真和安全闸门；不可用的运行环境必须明确记录为未验证。L2 运行 `validate_runtime_graph.py`，不能用文件数量代替闭环可达性。
 7. 冻结产物文件清单及 SHA-256，之后才允许检查真实源码。
 8. 对生成物和真实项目分别运行 `inspect_ros_workspace.py`，再运行 `compare_solution_to_inventory.py`。
 9. 人工按系统职责、运行连线和安全行为复核，最后才决定是否修改通用 Skill。
@@ -87,6 +87,8 @@
 - `semantic_static_match_ratio`：排除包名，纳入运动学、技术栈、接口、功能和包职责；仍需人工验证运行连线。
 
 所有安全缺失都单独列出，不因比率较高而降级。最终报告需给出逐维度得分、硬否决检查、运行证据和未验证项。
+
+源码快照有白名单时把可用/总文件数写入 availability JSON，并通过 `--source-availability` 交给比较器。覆盖率低于 80% 时，比率状态必须为 `inconclusive_incomplete_source_snapshot`，缺失项只能标为工具未知。`inspect_ros_workspace.py` 的 `base_types` 表示源码提及或支持的类型，不代表当前激活配置；只有运行参数、明确配置或用户确认才能把 `base_type_scope` 提升为 `active_configuration`。
 
 ## 通用改进规则
 

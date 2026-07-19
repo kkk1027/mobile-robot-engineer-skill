@@ -13,6 +13,7 @@ from typing import Any
 FIELDS = ("ros", "languages", "frameworks", "packages", "package_roles", "interfaces", "features")
 SEMANTIC_FIELDS = tuple(field for field in FIELDS if field != "packages")
 SAFETY_FEATURES = {"command_timeout", "emergency_stop", "watchdog", "command_arbitration"}
+MIN_CONCLUSIVE_SOURCE_COVERAGE = 0.8
 FRAMEWORK_ALIASES = {
     "ydlidar_ros2_driver": {"ydlidar"},
     "flask_socketio": {"flask", "socketio"},
@@ -116,7 +117,30 @@ def evidence_for(inventory: dict[str, Any], field: str, value: str) -> list[dict
     return []
 
 
-def compare(solution: dict[str, Any], inventory: dict[str, Any]) -> dict[str, Any]:
+def source_coverage(availability: dict[str, Any] | None) -> dict[str, Any] | None:
+    if availability is None:
+        return None
+    total = availability.get("whitelisted_file_count", availability.get("total_file_count"))
+    available = availability.get("available_file_count")
+    if not isinstance(total, int) or not isinstance(available, int) or total <= 0:
+        raise ValueError("source availability needs positive whitelisted_file_count and integer available_file_count")
+    if available < 0 or available > total:
+        raise ValueError("available_file_count must be between zero and whitelisted_file_count")
+    ratio = available / total
+    return {
+        "available_file_count": available,
+        "whitelisted_file_count": total,
+        "ratio": round(ratio, 4),
+        "minimum_conclusive_ratio": MIN_CONCLUSIVE_SOURCE_COVERAGE,
+        "complete_enough_for_static_ratio": ratio >= MIN_CONCLUSIVE_SOURCE_COVERAGE,
+    }
+
+
+def compare(
+    solution: dict[str, Any],
+    inventory: dict[str, Any],
+    availability: dict[str, Any] | None = None,
+) -> dict[str, Any]:
     comparisons: dict[str, Any] = {}
     semantic_comparisons: dict[str, Any] = {}
     exact_expected = 0
@@ -160,16 +184,32 @@ def compare(solution: dict[str, Any], inventory: dict[str, Any]) -> dict[str, An
     expected_base = normalize_value(solution.get("base_type", ""), "base_types")
     actual_bases = normalize_list(inventory.get("base_types", []), "base_types")
     base_match = bool(expected_base and expected_base in actual_bases)
+    base_scope = str(inventory.get("base_type_scope", "unknown"))
+    active_base_known = base_scope == "active_configuration"
+    base_status = "matched" if base_match else (
+        "mismatch" if active_base_known else "tool_unknown_active_variant"
+    )
     if expected_base:
-        exact_expected += 1
-        exact_matched += int(base_match)
-        semantic_expected += 1
-        semantic_matched += int(base_match)
+        if base_match or active_base_known:
+            exact_expected += 1
+            exact_matched += int(base_match)
+            semantic_expected += 1
+            semantic_matched += int(base_match)
     expected_features = normalize_list(solution.get("features", []), "features")
     safety_expected = expected_features & SAFETY_FEATURES
     safety_missing = set(comparisons["features"]["missing_static_evidence"]) & SAFETY_FEATURES
     exact_score = 1.0 if exact_expected == 0 else exact_matched / exact_expected
     semantic_score = 1.0 if semantic_expected == 0 else semantic_matched / semantic_expected
+    coverage = source_coverage(availability)
+    ratio_status = "diagnostic_only"
+    missing_status = "static_not_detected"
+    if coverage is not None and not coverage["complete_enough_for_static_ratio"]:
+        ratio_status = "inconclusive_incomplete_source_snapshot"
+        missing_status = "tool_unknown_due_to_incomplete_source_snapshot"
+    for field in comparisons.values():
+        field["missing_evidence_status"] = missing_status
+    for field in semantic_comparisons.values():
+        field["missing_role_status"] = missing_status
     return {
         "schema_version": 2,
         "summary": {
@@ -180,15 +220,20 @@ def compare(solution: dict[str, Any], inventory: dict[str, Any]) -> dict[str, An
             "semantic_matched_items": semantic_matched,
             "semantic_static_match_ratio": round(semantic_score, 4),
             "static_match_ratio": round(semantic_score, 4),
+            "static_ratio_status": ratio_status,
+            "source_snapshot_coverage": coverage,
             "manual_review_required": True,
             "package_name_overlap_is_informational": True,
             "safety_expectations": sorted(safety_expected),
             "safety_missing_static_evidence": sorted(safety_missing),
+            "safety_missing_status": missing_status,
         },
         "base_type": {
             "expected": expected_base or None,
             "actual": sorted(actual_bases),
-            "matched": base_match,
+            "matched": base_match if (base_match or active_base_known) else None,
+            "status": base_status,
+            "inventory_scope": base_scope,
             "evidence": evidence_for(inventory, "base_types", expected_base) if base_match else [],
         },
         "comparisons": comparisons,
@@ -200,6 +245,8 @@ def compare(solution: dict[str, Any], inventory: dict[str, Any]) -> dict[str, An
             "interface names are projected to coarse responsibilities for the semantic ratio",
             "known framework and feature aliases are projected before semantic comparison",
             "neither static ratio is a final quality score",
+            "an inventory lists mentioned or supported chassis variants unless an active configuration is explicitly supplied",
+            "a source snapshot below 80% whitelist coverage makes static ratios inconclusive and missing evidence tool-unknown",
             "manually inspect runtime wiring, generated files, firmware, and hardware behavior",
         ],
     }
@@ -209,6 +256,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("solution", type=Path, help="solution JSON")
     parser.add_argument("inventory", type=Path, help="inventory JSON")
+    parser.add_argument("--source-availability", type=Path, help="optional source whitelist availability JSON")
     parser.add_argument("--output", type=Path, help="write comparison JSON")
     parser.add_argument("--pretty", action="store_true", help="pretty-print JSON")
     return parser.parse_args(argv)
@@ -220,7 +268,8 @@ def main(argv: list[str] | None = None) -> int:
     try:
         solution = load_json(args.solution.resolve())
         inventory = load_json(args.inventory.resolve())
-        result = compare(solution, inventory)
+        availability = load_json(args.source_availability.resolve()) if args.source_availability else None
+        result = compare(solution, inventory, availability)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
         return 2

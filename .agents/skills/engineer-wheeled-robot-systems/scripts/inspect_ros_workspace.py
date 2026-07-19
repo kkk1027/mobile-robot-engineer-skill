@@ -366,6 +366,7 @@ def inventory(root: Path) -> dict[str, Any]:
         "languages": sorted(languages),
         "frameworks": detected("frameworks"),
         "base_types": detected("base_types"),
+        "base_type_scope": "mentioned_or_supported_not_active_configuration",
         "hardware": detected("hardware"),
         "features": detected("features"),
         "package_roles": detected("package_roles"),

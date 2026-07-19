@@ -56,6 +56,12 @@
 
 固定随机种子，保存世界、参数、软件版本、输入和验收指标。
 
+## 仿真运行图闸门
+
+L2 不以文件存在为判据。为仿真 profile 声明组件生产/消费接口并验证至少一条完整路径：测试/导航运动请求 → 唯一命令监督器 → 仿真执行器 → 轮式里程计 → 状态估计。机器人生成、传感器数据、健康门和仿真专用运动授权也必须有生产者与消费者。若真实硬件健康条件直接复用于仿真，必须提供等价仿真健康源；不得通过删除安全门让仿真“能动”。运行 `validate_runtime_graph.py` 后仍需实际启动和场景测试证据。
+
+`runtime_graph.json` 的每个 profile 至少包含 `target_level`、`components`、`required_gate_topics` 和 `required_flows`。组件写明 `name`、`roles`、`consumes`、`produces`；L2 的标准角色是 `robot_spawn`、`motion_source`、`command_supervisor`、`actuator`、`feedback`、`state_estimation`、`health_gate` 和 `motion_authorizer`。例如必达流可写为 `{"name":"motion_feedback","from":"/motion/request","to":"/state/local"}`。
+
 ## Sim-to-Real 闭环
 
 1. 先标定实机轮径、轮距/轴距、传感器外参和执行器响应。

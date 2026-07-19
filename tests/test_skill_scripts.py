@@ -1,6 +1,7 @@
 from __future__ import annotations
 
 import json
+import hashlib
 import subprocess
 import sys
 import tempfile
@@ -36,6 +37,7 @@ class SkillScriptTests(unittest.TestCase):
         data = json.loads(result.stdout)
         self.assertIn("ros2", data["ros"])
         self.assertIn("differential", data["base_types"])
+        self.assertEqual(data["base_type_scope"], "mentioned_or_supported_not_active_configuration")
         self.assertIn("ros2_control", data["frameworks"])
         self.assertIn("gazebo", data["frameworks"])
         self.assertEqual({p["name"] for p in data["packages"]}, {"mini_diff_robot"})
@@ -192,6 +194,116 @@ class SkillScriptTests(unittest.TestCase):
         self.assertEqual(result.returncode, 0, result.stderr)
         compared = json.loads(result.stdout)
         self.assertEqual(compared["comparisons"]["interfaces"]["missing_static_evidence"], [])
+
+    def test_incomplete_source_snapshot_is_inconclusive_and_active_base_is_unknown(self) -> None:
+        solution = {"base_type": "differential", "features": ["emergency_stop"]}
+        inventory = {
+            "schema_version": 2,
+            "base_types": ["omni"],
+            "base_type_scope": "mentioned_or_supported_not_active_configuration",
+            "ros": [], "languages": [], "frameworks": [], "packages": [],
+            "package_roles": [], "interfaces": [], "features": [], "evidence": {},
+        }
+        availability = {"whitelisted_file_count": 20, "available_file_count": 7}
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            solution_path = root / "solution.json"
+            inventory_path = root / "inventory.json"
+            availability_path = root / "availability.json"
+            solution_path.write_text(json.dumps(solution), encoding="utf-8")
+            inventory_path.write_text(json.dumps(inventory), encoding="utf-8")
+            availability_path.write_text(json.dumps(availability), encoding="utf-8")
+            result = run_script(
+                "compare_solution_to_inventory.py", str(solution_path), str(inventory_path),
+                "--source-availability", str(availability_path),
+            )
+        self.assertEqual(result.returncode, 0, result.stderr)
+        data = json.loads(result.stdout)
+        self.assertEqual(data["summary"]["static_ratio_status"], "inconclusive_incomplete_source_snapshot")
+        self.assertFalse(data["summary"]["source_snapshot_coverage"]["complete_enough_for_static_ratio"])
+        self.assertIsNone(data["base_type"]["matched"])
+        self.assertEqual(data["base_type"]["status"], "tool_unknown_active_variant")
+        self.assertEqual(data["summary"]["safety_missing_status"], "tool_unknown_due_to_incomplete_source_snapshot")
+
+    def test_generation_trace_covers_every_fact_and_checks_evidence(self) -> None:
+        intake = {
+            "allowed_input": {
+                "hardware_devices": {
+                    "base_type": "differential",
+                    "wheel_radius_m": {"value": 0.07, "provenance": "test_default_simulation_only"},
+                },
+                "project_direction": ["indoor navigation"],
+            }
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            intake_path = root / "intake.json"
+            evidence = root / "robot_contract.json"
+            intake_path.write_text(json.dumps(intake), encoding="utf-8")
+            evidence.write_text("{}", encoding="utf-8")
+            trace = {
+                "intake_sha256": hashlib.sha256(intake_path.read_bytes()).hexdigest(),
+                "facts": {
+                    "hardware_devices.base_type": {
+                        "disposition": "used", "evidence": ["robot_contract.json"],
+                    },
+                    "hardware_devices.wheel_radius_m": {
+                        "disposition": "used", "scope": "simulation_only",
+                        "evidence": ["robot_contract.json"],
+                    },
+                    "project_direction[0]": {
+                        "disposition": "used", "evidence": ["robot_contract.json"],
+                    },
+                },
+            }
+            trace_path = root / "trace.json"
+            trace_path.write_text(json.dumps(trace), encoding="utf-8")
+            result = run_script(
+                "validate_generation_trace.py", str(intake_path), str(trace_path),
+                "--project-root", str(root),
+            )
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            trace["facts"].pop("hardware_devices.base_type")
+            trace_path.write_text(json.dumps(trace), encoding="utf-8")
+            failed = run_script("validate_generation_trace.py", str(intake_path), str(trace_path))
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn("trace.missing_fact", {item["code"] for item in json.loads(failed.stdout)["issues"]})
+
+    def test_runtime_graph_requires_reachable_l2_closed_loop(self) -> None:
+        graph = {
+            "profiles": {
+                "simulation": {
+                    "target_level": "L2",
+                    "components": [
+                        {"name": "spawn", "roles": ["robot_spawn"], "consumes": [], "produces": []},
+                        {"name": "test_source", "roles": ["motion_source"], "consumes": [], "produces": ["/request"]},
+                        {"name": "supervisor", "roles": ["command_supervisor"], "consumes": ["/request", "/health", "/authorized"], "produces": ["/safe"]},
+                        {"name": "sim_base", "roles": ["actuator", "feedback"], "consumes": ["/safe"], "produces": ["/wheel_odom"]},
+                        {"name": "estimator", "roles": ["state_estimation"], "consumes": ["/wheel_odom"], "produces": ["/local_state"]},
+                        {"name": "health", "roles": ["health_gate"], "consumes": ["/local_state"], "produces": ["/health"]},
+                        {"name": "authorizer", "roles": ["motion_authorizer"], "consumes": [], "produces": ["/authorized"]},
+                    ],
+                    "required_gate_topics": ["/health", "/authorized"],
+                    "required_flows": [{"name": "motion_feedback", "from": "/request", "to": "/local_state"}],
+                }
+            }
+        }
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "runtime_graph.json"
+            path.write_text(json.dumps(graph), encoding="utf-8")
+            result = run_script("validate_runtime_graph.py", str(path))
+            self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+            graph["profiles"]["simulation"]["components"] = [
+                item for item in graph["profiles"]["simulation"]["components"]
+                if item["name"] != "estimator"
+            ]
+            path.write_text(json.dumps(graph), encoding="utf-8")
+            failed = run_script("validate_runtime_graph.py", str(path))
+        self.assertEqual(failed.returncode, 1)
+        issues = json.loads(failed.stdout)["profiles"]["simulation"]["issues"]
+        codes = {item["code"] for item in issues}
+        self.assertIn("graph.missing_role", codes)
+        self.assertIn("graph.unreachable_flow", codes)
 
     def test_reference_links_exist(self) -> None:
         skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")

@@ -24,6 +24,27 @@
 4. 只询问会改变当前目标等级的问题。一次按“运动与驱动、安全与供电、传感器与标定、软件与验收”的顺序给出成组问题。
 5. 用户允许测试默认值时，逐项标注来源和适用范围；不能用默认值推断电机引脚语义、驱动真值表、制动逻辑或电气安全链。
 6. 补全后再次验证，冻结输入文件及其 SHA-256，再开始独立生成。
+7. 生成时维护逐事实处置表：`used` 必须指向产物证据；`question` 写明问题；`blocked` 和 `intentionally_unused` 写明原因。测试默认值被使用时必须标出 `simulation_only`、`bench_only`、`documentation_only` 或 `blocked_real` 范围。
+8. 运行 `validate_generation_trace.py`；任何已确认硬件、接口、版本、目标或边界没有处置记录时，不得冻结产物。
+
+最小追踪格式：
+
+~~~json
+{
+  "intake_sha256": "完整 intake 文件的 SHA-256",
+  "facts": {
+    "hardware_devices.base.wheel_radius_m": {
+      "disposition": "used",
+      "scope": "simulation_only",
+      "evidence": ["robot_contract.json"]
+    },
+    "hardware_devices.drive.driver_truth_table": {
+      "disposition": "blocked",
+      "reason": "实机极性和制动语义未确认"
+    }
+  }
+}
+~~~
 
 ## 构建信息清单
 
@@ -52,6 +73,8 @@
 | L4 已验证实机 | 已在指定机器人上通过验收 | L3，加构建/部署/低速运动/故障注入/任务验收的运行证据和明确授权 |
 
 输入验证器最多判定“具备某等级的输入条件”。L4 必须有运行证据，不能仅由 JSON 输入推断。交付时明确写出当前等级，不得把 L1/L2 产物称为完整实机项目。
+
+输入就绪等级不等于交付完成等级。例如输入可以满足 L2，但生成的仿真若没有机器人生成、传感器、状态估计、健康授权和命令反馈连线，只能判为 L1 加 partial L2。
 
 ## 运动学路由
 
