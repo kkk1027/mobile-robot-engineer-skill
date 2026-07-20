@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "motion_enabled": true,
+  "modules": ["base_driver", "safety_mux", "navigation", "localization"],
+  "connections": [
+    {"from": "navigation.cmd_request", "to": "safety_mux.autonomy_request"},
+    {"from": "safety_mux.safe_command", "to": "base_driver.command"},
+    {"from": "base_driver.wheel_state", "to": "localization.wheel_state"}
+  ],
+  "internal_flows": [
+    {"module": "safety_mux", "from": "autonomy_request", "to": "safe_command"}
+  ],
+  "tf_edges": [
+    {"parent": "odom", "child": "base_link", "owner": "localization"}
+  ],
+  "command_authority": {
+    "module": "safety_mux",
+    "sources": ["navigation.cmd_request"],
+    "output": "safety_mux.safe_command",
+    "actuator": "base_driver.command"
+  }
+}

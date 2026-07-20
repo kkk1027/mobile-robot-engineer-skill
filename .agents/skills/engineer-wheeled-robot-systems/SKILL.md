@@ -1,123 +1,107 @@
 ---
 name: engineer-wheeled-robot-systems
-description: 设计、从零创建、诊断、验证和迭代基于 ROS 2（兼容 ROS 1）的轮式机器人完整软件闭环，覆盖差速/滑移、阿克曼、麦克纳姆、全向轮、舵轮和特殊轮式底盘，支持 C++/Python、MCU/Jetson/工控机、Gazebo/Isaac Sim/MuJoCo 与 SSH 实机。用户提供机器人底盘、硬件、传感器、通信接口、技术栈、仿真器、任务、故障现象或现有仓库时使用；不用于腿式、飞行、水面/水下机器人，也不替代机械、电气和功能安全专业审批。
+description: 设计、二次开发、集成、验证、诊断和迭代基于 ROS 2（兼容 ROS 1）的轮式移动机器人软件闭环。用于从零构建机器人、把用户已有驱动/功能包集成为面向客户需求的整机产品、为仅有驱动的设备补齐单功能例程与测试、解决 ROS 机器人软件问题，或评审轮式机器人架构。覆盖感知、定位、决策、规划、控制、执行器反馈、安全、仿真、Jetson/工控机/MCU 与 SSH 实机边界。
 ---
 
 # 轮式机器人工程闭环
 
-## 核心原则
+把机器人视为受运动学、硬件和安全约束的闭环产品系统，而不是可任意拼接的 ROS 节点集合：
 
-把机器人视为带物理反馈和安全约束的闭环系统，不把问题简化成单个 ROS 节点。始终沿以下链路工作：
+~~~text
+客户需求 → 能力/接口 → 感知与状态估计 → 决策与规划 → 命令仲裁 → 控制与执行器 → 反馈、安全与验收
+~~~
 
-传感器与执行器 → 驱动与时间戳 → ROS 接口与 TF → 状态估计与环境表达 → 感知 → 任务决策与规划 → 控制与约束 → 执行器反馈 → 安全与可观测性。
+优先采用 ROS 2 原生架构。ROS 1 仅保留给现有依赖，并明确桥接边界、消息所有权与替换计划。
 
-优先采用 ROS 2 原生架构。仅在现有设备或依赖确实要求时保留 ROS 1，并把桥接边界、消息所有权和迁移计划写清楚。
+## 路由
 
-只把可复现的日志、配置、源码、运行图、测量值或测试结果称为证据。把未验证内容标为假设，并说明验证方法。
-
-## 先路由任务
-
-1. 判断任务模式：
-   - 从零建设：创建仿真、实机或仿真实机共用的软件方案。
-   - 故障诊断：定位任意软件层级的问题并在获准时修复。
-   - 系统评审：审查现有架构、性能、安全、可维护性并提出迭代建议。
-2. 收集会改变方案的最小信息。读取 [system-intake-and-routing.md](references/system-intake-and-routing.md)。
-   - 把硬件设备、技术栈、项目方向和执行边界写入结构化输入。
-   - 运行 `scripts/validate_project_intake.py <intake.json> --pretty`，根据目标交付等级主动补问。
-   - 每个非显然值保留来源；测试默认值不能进入实机运动配置。
+1. 判断工作模式。
+   - 从零构建：根据硬件和技术栈创建架构、仿真或实机项目。
+   - 单功能开发：用户只有设备驱动或底层库时，先补齐可独立验证的 ROS 功能基线。
+   - 功能集成与产品化：用户已有多个驱动、算法或功能包，需要组成满足客户验收的整机产品。
+   - 故障诊断与迭代：定位运行问题、修复获准范围内的代码，或提出有证据的演进建议。
+2. 收集会改变方案的最小信息。读取 [system-intake-and-routing.md](references/system-intake-and-routing.md)。记录硬件、技术栈、项目方向、执行边界和每项事实来源。
 3. 识别底盘运动学。读取 [wheeled-kinematics.md](references/wheeled-kinematics.md)。
-4. 建立系统接口契约，再选择具体包和算法。读取 [ros-architecture-and-interfaces.md](references/ros-architecture-and-interfaces.md)。
-5. 只加载与当前问题有关的其他参考文件，不要一次加载全部资料。
+4. 建立接口与所有权契约，再选择实现。读取 [ros-architecture-and-interfaces.md](references/ros-architecture-and-interfaces.md)。
+5. 若是单功能开发或功能集成，读取 [secondary-development-and-integration.md](references/secondary-development-and-integration.md)，按其中的模块清单、集成契约和需求追踪流程工作。
+6. 只读取当前任务需要的其余参考文件；不要一次加载全部资料。
 
-缺失信息不会改变安全性或主要架构时，采用显式默认值继续；会改变运动模型、硬件接口、部署权限或安全边界时，立即暂停并询问用户。
+硬件与时序读取 [hardware-embedded-and-time.md](references/hardware-embedded-and-time.md)，仿真与 sim-to-real 读取 [description-simulation-and-sim2real.md](references/description-simulation-and-sim2real.md)，感知定位读取 [perception-localization-and-mapping.md](references/perception-localization-and-mapping.md)，决策控制读取 [decision-navigation-and-control.md](references/decision-navigation-and-control.md)。
 
-## 执行安全闸门
+信息缺失但会改变运动学、硬件接口、安全链或实机权限时，暂停并询问。测试默认值只能用于声明的仿真或台架范围，不能静默进入实机运动配置。
 
-按最高影响等级执行，不要因已建立 SSH 连接而提升权限：
+## 执行安全门
 
 | 等级 | 范围 | 默认行为 |
 |---|---|---|
 | G0 | 文档、源码、配置、离线数据分析 | 可直接执行 |
-| G1 | 本地或隔离仿真、单元/集成测试 | 可直接执行，说明资源消耗 |
-| G2 | 实机只读诊断、日志、ROS 图、状态读取 | 用户已授权连接后可执行 |
-| G3 | 构建、部署、参数写入、服务重启、固件操作 | 操作前确认精确目标、回滚和停机影响 |
-| G4 | 轮子转动、制动释放、闭环运动、执行器测试 | 每次明确授权；验证急停、限速、超时停机、场地和人员安全 |
+| G1 | 本地构建、仿真、单元/集成测试 | 可直接执行，说明资源影响 |
+| G2 | 实机只读诊断、日志、ROS 图、状态读取 | 用户明确授权连接后执行 |
+| G3 | 部署、参数写入、重启、固件或服务变更 | 执行前确认精确目标、回滚和影响 |
+| G4 | 使能、移动、转向、抓取等实机执行器动作 | 每次明确授权；验证急停、限速、超时、场地和人员安全 |
 
-禁止绕过急停、安全控制器、主机指纹、权限边界或硬件联锁。禁止在对话、命令行或日志中暴露密码、令牌、私钥。涉及实机时读取 [ssh-real-robot-safety.md](references/ssh-real-robot-safety.md)。
+禁止绕过物理急停、安全控制器、制动、权限边界或硬件保护。SSH 实机任务读取 [ssh-real-robot-safety.md](references/ssh-real-robot-safety.md)。
 
-## 从零建设
+## 从零构建
 
-先声明目标和当前交付等级：L1 架构级、L2 可构建仿真、L3 可部署但默认禁动的实机项目或 L4 已验证实机。L4 必须有运行证据，不能由配置文件推断。
+声明交付等级：L1 架构级、L2 可构建仿真、L3 可部署但默认禁动的实机项目、L4 已验证实机。L4 必须有运行证据。
 
-按顺序交付：
+1. 冻结结构化输入及哈希，维护 `generation_trace.json`。每个事实只能标为 `used`、`question`、`blocked` 或 `intentionally_unused`；`used` 必须有产物证据。
+2. 建立硬件合同：运动学、执行器、传感器、计算节点、总线、供电与安全链。
+3. 设计分层仓库：description、hardware、control、sensing、state_estimation、perception_mapping、navigation_decision、bringup、monitoring_safety、simulation_tests。
+4. 定义 Topic/Service/Action、TF、QoS、频率、时间源、生命周期、故障降级和唯一命令仲裁者。
+5. 先描述/TF，再底盘/里程计，再传感器/估计，再导航/决策，最后性能和安全验证。
+6. 对每个仿真或实机 profile 写 `runtime_graph.json`，验证运动请求到执行器、反馈到状态估计以及健康/授权门的可达闭环。
 
-1. 需求与假设：冻结结构化输入及哈希，列出系统边界、任务场景、验收指标、已知未知项和逐字段来源。
-   - 同时创建 `generation_trace.json`。每个输入事实只能标为 `used`、`question`、`blocked` 或 `intentionally_unused`；`used` 必须指向生成文件证据。
-   - 运行 `scripts/validate_generation_trace.py <intake.json> <generation_trace.json> --project-root <generated-project>`，防止已确认设备、接口或目标在生成中静默丢失。
-2. 运动学与硬件映射：轮型、自由度、执行器、传感器、计算节点、通信总线、供电与安全链。
-3. 闭环架构：节点/组件、进程和主机分布、Topic/Service/Action、TF、QoS、频率、时间源、生命周期和故障降级。
-4. 仓库结构：description、hardware、bringup、localization、perception、navigation、control、simulation、monitoring、tests 等包及依赖方向。
-5. 仿真模型：几何、惯量、碰撞、摩擦、执行器和传感器噪声；保持仿真实机接口一致。
-6. 分阶段实现：先描述与 TF，再底盘和里程计，再传感器与状态估计，再 SLAM/定位，再导航/决策，最后性能和安全验证。
-7. 验证矩阵：静态检查、单元测试、launch 测试、仿真场景、故障注入、HIL、低速实机、任务级验收。
+使用 `validate_project_intake.py`、`validate_generation_trace.py`、`validate_robot_contract.py` 和 `validate_runtime_graph.py`。硬件合同必须同步传播到 URDF/Xacro、控制器、固件、状态估计、仿真和启动配置。
 
-为每个仿真/实机 profile 生成 `runtime_graph.json`，列出组件角色、生产/消费接口、健康与授权门，以及从运动请求到执行器反馈/状态估计的必达路径。L2 必须运行 `scripts/validate_runtime_graph.py <runtime_graph.json>`；仅存在 URDF、world、bridge 和 launch 文件不能算“可构建仿真”。特别检查机器人是否生成、传感器是否出数、状态估计是否启动、安全门能否在该 profile 合法变为健康、最终命令是否到达执行器以及反馈是否回流。
+## 单功能开发
 
-硬件合同必须是单一事实源，并传播到 URDF/Xacro、控制器、固件、状态估计、传感器外参、仿真和启动配置。若某能力因输入或依赖缺失只能部分实现，在 `solution.json` 中把声明标为 `partial`、`blocked` 或 `planned`，不得写成完成。
+当用户只有串口、CAN、USB、EtherCAT 或厂商 SDK 驱动时，先交付一个默认禁动的功能基线，不要直接把驱动接入整机。
 
-硬件与时序读取 [hardware-embedded-and-time.md](references/hardware-embedded-and-time.md)，仿真读取 [description-simulation-and-sim2real.md](references/description-simulation-and-sim2real.md)，感知定位读取 [perception-localization-and-mapping.md](references/perception-localization-and-mapping.md)，决策控制读取 [decision-navigation-and-control.md](references/decision-navigation-and-control.md)。
+1. 明确设备职责、传输协议、单位、时间戳、故障语义、供电与安全边界。
+2. 在 `hardware` 或专用驱动包中封装稳定 ROS 接口；高频实时闭环仍留在 MCU 或驱动器。
+3. 提供参数合同、生命周期/连接状态、diagnostics、最小 launch、假硬件或录制数据测试，以及断连/超时测试。
+4. 以台架或仿真证明单功能正确，再进入集成；真实执行器默认保持禁止运动。
+5. 将模块登记为 `new_driver` 或 `new_capability`，由模块清单验证器确认其测试与安全默认值。
 
-## 故障诊断
+## 功能集成与产品化
 
-1. 固化现象：期望、实际、首次发生时间、复现步骤、影响范围和最近变更。
-2. 建立时间线：启动顺序、节点状态、Topic 频率、时间戳、TF 延迟、资源和网络变化。
-3. 从执行器反馈向上追踪，或从任务失败点向下追踪；不要同时随意修改多个层级。
-4. 为每个假设定义可证伪检查，先运行成本低、风险低、区分度高的检查。
-5. 找到根因后实施最小修复，加入回归测试，并验证没有破坏仿真实机一致性。
+集成模式允许在用户授权范围内读取已有源码、配置、测试和运行证据；它与从零盲测不同。先记录来源提交、许可证、修改权限和允许目录。默认策略是固定/只读原模块，在 `product_adapters`、`product_capabilities` 和 `product_bringup` 中新增适配与编排；直接修改原模块必须获得用户授权。
 
-读取 [diagnosis-and-verification.md](references/diagnosis-and-verification.md)。先运行工作区盘点脚本以减少猜测：
+按顺序执行：
 
-~~~text
-python scripts/inspect_ros_workspace.py <workspace-or-repo> --pretty
-~~~
+1. 对每个来源工作区运行 `inspect_ros_workspace.py`，保留清单和证据。
+2. 运行 `create_module_manifest.py <inventory.json>` 生成候选 `module_manifest.json`；补充真实职责、接口方向、成熟度、修改策略和复用结论。
+3. 运行 `validate_module_manifest.py`。把模块分类为 `reusable`、`needs_adapter`、`needs_implementation` 或 `blocked`，不要把源码存在等同于可用。
+4. 将客户需求写入 `requirements_trace.json`：需求 → 模块 → 接口 → 验证 → 证据。P0/P1 需求没有集成级验证时不得声明完成。
+5. 写 `integration_contract.json`：模块连接、消息类型、单位/坐标/时间语义、QoS、命名空间、TF 所有者、适配器和唯一命令权威者。运行 `validate_integration_contract.py` 与 `validate_requirements_trace.py`。
+6. 先以最小垂直切片集成：一个需求、必要传感、状态、决策/命令、安全、执行器反馈和验收测试。通过后再增加下一项能力。
+7. 按模块单测 → 仿真集成 → 故障注入 → 台架/HIL → 低速实机 → 客户场景验收升级。用证据更新需求状态；保留回滚版本。
 
-## 系统评审与迭代
+`runtime_graph.json` 仍用于检查运行闭环；`integration_contract.json` 用于检查模块之间的静态兼容性，二者不可互相替代。
 
-按严重程度排序输出：
+## 诊断与系统评审
 
-- P0：可导致失控、碰撞、硬件损坏、数据不可恢复或安全链失效。
-- P1：阻断核心任务或造成高概率运行失败。
-- P2：性能、鲁棒性、测试、部署或维护性明显不足。
-- P3：优化机会和长期演进建议。
+要求现象、复现步骤、期望、首次失败时间、最近变更和证据。沿着“命令生成 → 仲裁/安全 → 控制器 → 驱动/制动 → 执行器 → 反馈/状态估计”追踪。为每个根因假设定义最低风险的证伪检查和回归测试。读取 [diagnosis-and-verification.md](references/diagnosis-and-verification.md)。
 
-每条建议包含证据、影响、建议变更、验证方法、回滚方式和依赖条件。不要只罗列最佳实践。
+评审时按 P0–P3 分级，给出证据、影响、最小修复、验证与回滚。不要仅以包名、文件数或代码重合度评价集成质量。
 
-## 使用确定性脚本
+## 确定性脚本
 
-- 使用 scripts/inspect_ros_workspace.py 生成 ROS 仓库静态清单和源码证据。
-- 使用 scripts/validate_project_intake.py 检查输入完整性、来源和 L1-L4 交付条件，并生成需要向用户提出的问题。
-- 使用 scripts/validate_robot_contract.py 检查系统契约、TF、接口、频率和安全超时。
-- 使用 scripts/validate_generation_trace.py 检查每个输入事实的生成处置和文件证据。
-- 使用 scripts/validate_runtime_graph.py 检查各 profile 的命令—执行—反馈闭环、唯一所有者和健康/授权门。
-- 使用 scripts/compare_solution_to_inventory.py 将方案声明与真实仓库清单逐项对照。
+- `inspect_ros_workspace.py`：生成 ROS 工作区静态清单和去敏源码证据。
+- `validate_project_intake.py`：检查输入完整性、来源和 L1–L4 输入条件。
+- `validate_generation_trace.py`：检查输入事实在生成物中的处置和证据。
+- `validate_robot_contract.py`：检查运动学、TF、接口、频率和安全超时。
+- `validate_runtime_graph.py`：检查 profile 的请求—执行器—反馈—状态估计—安全门闭环。
+- `create_module_manifest.py`：从源码清单生成可人工补全的模块资产清单。
+- `validate_module_manifest.py`：检查模块复用结论、修改边界、驱动基线和验证证据。
+- `validate_integration_contract.py`：检查模块连接、适配器、TF 所有权和唯一命令权威者。
+- `validate_requirements_trace.py`：检查客户需求至模块、接口、测试和证据的闭环。
+- `compare_solution_to_inventory.py`：仅用于评测时的语义对照。
 
-脚本只做静态分析，不连接机器人、不执行 ROS 节点、不修改被分析仓库。详细评测流程读取 [evaluation-and-source-comparison.md](references/evaluation-and-source-comparison.md)。
+脚本默认只做静态分析，不连接机器人、不启动 ROS 节点，也不修改用户源码。评测流程读取 [evaluation-and-source-comparison.md](references/evaluation-and-source-comparison.md)。
 
-## 输出契约
+## 完成条件
 
-无论采用哪种模式，最终结果至少包含：
-
-1. 任务结论或推荐方案。
-2. 已确认事实、假设和仍需用户提供的信息。
-3. 选择的底盘、ROS、语言、计算平台、通信、仿真和算法分支及理由。
-4. 闭环架构与关键接口契约。
-5. 分阶段实施或诊断步骤。
-6. 风险、安全等级、回滚和停止条件。
-7. 可运行的验证命令、预期结果和验收标准。
-8. 若检查现有仓库，提供文件路径和行号级证据。
-
-## 完成判据
-
-区分“输入足以生成某等级”和“产物已经达到该等级”。只有在接口契约自洽、运行图闭合、关键闭环有反馈、超时能安全停机、仿真或测试证据满足验收指标、遗留风险已明确时，才声明完成。真实机器人未验证时明确写出“仅完成离线/仿真验证”，不得暗示实机可用。
-
-维护或扩展本 Skill 时读取 [sources.md](references/sources.md)，保留来源、版本和许可证边界。
+完成不是“每个包能编译”。只有当目标需求具备可追溯实现和验收证据、接口和运行图闭合、命令能安全停止、实机等级与证据一致时，才可以声明整机功能完成。未验证能力明确标为 `planned`、`partial` 或 `blocked`。

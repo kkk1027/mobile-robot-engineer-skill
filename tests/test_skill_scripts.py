@@ -18,6 +18,10 @@ SOLUTION = REPO / "evals" / "scenarios" / "mini-diff-solution.json"
 GENERATED_CONTRACT = (
     REPO / "evals" / "results" / "diff-jetson-stm32-gazebo-contract.json"
 )
+INTEGRATION = REPO / "tests" / "fixtures" / "integration"
+INTEGRATION_MANIFEST = INTEGRATION / "module_manifest.json"
+INTEGRATION_CONTRACT = INTEGRATION / "integration_contract.json"
+REQUIREMENTS_TRACE = INTEGRATION / "requirements_trace.json"
 
 
 def run_script(name: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -305,6 +309,89 @@ class SkillScriptTests(unittest.TestCase):
         self.assertIn("graph.missing_role", codes)
         self.assertIn("graph.unreachable_flow", codes)
 
+    def test_module_manifest_candidate_generation_and_driver_baseline(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            inventory_path = root / "inventory.json"
+            scan = run_script(
+                "inspect_ros_workspace.py", str(FIXTURE), "--output", str(inventory_path)
+            )
+            self.assertEqual(scan.returncode, 0, scan.stderr)
+            generated = run_script("create_module_manifest.py", str(inventory_path))
+        self.assertEqual(generated.returncode, 0, generated.stderr)
+        candidate = json.loads(generated.stdout)
+        self.assertEqual(candidate["modules"][0]["state"], "candidate")
+        self.assertEqual(candidate["modules"][0]["classification"], "blocked")
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "candidate_manifest.json"
+            path.write_text(json.dumps(candidate), encoding="utf-8")
+            candidate_check = run_script("validate_module_manifest.py", str(path))
+        self.assertEqual(candidate_check.returncode, 0, candidate_check.stdout + candidate_check.stderr)
+        self.assertIn("module.candidate", {item["code"] for item in json.loads(candidate_check.stdout)["warnings"]})
+        valid = run_script("validate_module_manifest.py", str(INTEGRATION_MANIFEST))
+        self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+        manifest = json.loads(INTEGRATION_MANIFEST.read_text(encoding="utf-8"))
+        manifest["modules"][0]["verification"] = [
+            item for item in manifest["modules"][0]["verification"]
+            if item["kind"] != "safety_default"
+        ]
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "driver_without_safety.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            failed = run_script("validate_module_manifest.py", str(path))
+        self.assertEqual(failed.returncode, 1)
+        codes = {item["code"] for item in json.loads(failed.stdout)["errors"]}
+        self.assertIn("driver.baseline", codes)
+
+    def test_empty_module_manifest_is_inconclusive_not_ready(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "empty_manifest.json"
+            path.write_text(json.dumps({"schema_version": 1, "modules": []}), encoding="utf-8")
+            result = run_script("validate_module_manifest.py", str(path))
+        self.assertEqual(result.returncode, 0, result.stdout + result.stderr)
+        codes = {item["code"] for item in json.loads(result.stdout)["warnings"]}
+        self.assertIn("manifest.empty", codes)
+
+    def test_integration_contract_checks_type_adapter_and_command_authority(self) -> None:
+        valid = run_script(
+            "validate_integration_contract.py", str(INTEGRATION_CONTRACT),
+            "--module-manifest", str(INTEGRATION_MANIFEST),
+        )
+        self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+        manifest = json.loads(INTEGRATION_MANIFEST.read_text(encoding="utf-8"))
+        for module in manifest["modules"]:
+            if module["id"] == "navigation":
+                module["interfaces"][0]["type"] = "std_msgs/msg/String"
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "mismatched_manifest.json"
+            path.write_text(json.dumps(manifest), encoding="utf-8")
+            failed = run_script(
+                "validate_integration_contract.py", str(INTEGRATION_CONTRACT),
+                "--module-manifest", str(path),
+            )
+        self.assertEqual(failed.returncode, 1)
+        codes = {item["code"] for item in json.loads(failed.stdout)["errors"]}
+        self.assertIn("connection.type_mismatch", codes)
+
+    def test_requirements_trace_requires_integration_evidence_for_complete_p1(self) -> None:
+        valid = run_script(
+            "validate_requirements_trace.py", str(REQUIREMENTS_TRACE),
+            "--module-manifest", str(INTEGRATION_MANIFEST),
+        )
+        self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+        trace = json.loads(REQUIREMENTS_TRACE.read_text(encoding="utf-8"))
+        trace["requirements"][0]["verification"][0]["level"] = "unit"
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "unit_only_trace.json"
+            path.write_text(json.dumps(trace), encoding="utf-8")
+            failed = run_script(
+                "validate_requirements_trace.py", str(path),
+                "--module-manifest", str(INTEGRATION_MANIFEST),
+            )
+        self.assertEqual(failed.returncode, 1)
+        codes = {item["code"] for item in json.loads(failed.stdout)["errors"]}
+        self.assertIn("requirement.integration_evidence", codes)
+
     def test_reference_links_exist(self) -> None:
         skill_text = (SKILL / "SKILL.md").read_text(encoding="utf-8")
         import re
@@ -313,11 +400,13 @@ class SkillScriptTests(unittest.TestCase):
         self.assertGreaterEqual(len(links), 8)
         for link in links:
             self.assertTrue((SKILL / link).is_file(), link)
+        self.assertTrue((SKILL / "references" / "secondary-development-and-integration.md").is_file())
 
     def test_openai_metadata_mentions_skill(self) -> None:
         metadata = (SKILL / "agents" / "openai.yaml").read_text(encoding="utf-8")
         self.assertIn('display_name: "轮式机器人工程师"', metadata)
         self.assertIn("$engineer-wheeled-robot-systems", metadata)
+        self.assertIn("集成", metadata)
 
     def test_scenarios_are_wheeled(self) -> None:
         scenario_dir = REPO / "evals" / "scenarios"

@@ -1,0 +1,75 @@
+{
+  "schema_version": 1,
+  "source_inventory_sha256": "8c8fdc71f1f8d1c3017f1d0d8f1e1f8c8fdc71f1f8d1c3017f1d0d8f1e1f8c",
+  "modules": [
+    {
+      "id": "base_driver",
+      "state": "reviewed",
+      "origin": "new_driver",
+      "modification_policy": "owned",
+      "maturity": "M2",
+      "classification": "reusable",
+      "roles": ["hardware", "control"],
+      "interfaces": [
+        {"id": "command", "name": "/base/command", "type": "geometry_msgs/msg/TwistStamped", "direction": "consumes"},
+        {"id": "wheel_state", "name": "/base/wheel_state", "type": "sensor_msgs/msg/JointState", "direction": "produces"}
+      ],
+      "verification": [
+        {"kind": "build", "evidence": ["tests/base_driver_build.txt"]},
+        {"kind": "bench_or_fake", "evidence": ["tests/fake_transport_test.py"]},
+        {"kind": "safety_default", "evidence": ["tests/default_disabled_test.py"]}
+      ]
+    },
+    {
+      "id": "safety_mux",
+      "state": "reviewed",
+      "origin": "adapter",
+      "modification_policy": "adapter_only",
+      "maturity": "M2",
+      "classification": "reusable",
+      "roles": ["control", "monitoring"],
+      "interfaces": [
+        {"id": "autonomy_request", "name": "/request/autonomy", "type": "geometry_msgs/msg/TwistStamped", "direction": "consumes"},
+        {"id": "safe_command", "name": "/command/safe", "type": "geometry_msgs/msg/TwistStamped", "direction": "produces"}
+      ],
+      "verification": [
+        {"kind": "unit", "evidence": ["tests/safety_mux_test.py"]}
+      ]
+    },
+    {
+      "id": "navigation",
+      "state": "reviewed",
+      "origin": "existing_source",
+      "source_package": "navigation_stack",
+      "modification_policy": "read_only",
+      "maturity": "M1",
+      "classification": "needs_adapter",
+      "roles": ["navigation_decision"],
+      "interfaces": [
+        {"id": "cmd_request", "name": "/navigation/cmd_request", "type": "geometry_msgs/msg/TwistStamped", "direction": "produces"}
+      ],
+      "verification": [
+        {"kind": "build", "evidence": ["ci/navigation_build.log"]},
+        {"kind": "unit", "evidence": ["tests/navigation_unit.py"]}
+      ]
+    },
+    {
+      "id": "localization",
+      "state": "reviewed",
+      "origin": "existing_source",
+      "source_package": "state_estimation",
+      "modification_policy": "read_only",
+      "maturity": "M1",
+      "classification": "reusable",
+      "roles": ["state_estimation"],
+      "interfaces": [
+        {"id": "wheel_state", "name": "/base/wheel_state", "type": "sensor_msgs/msg/JointState", "direction": "consumes"},
+        {"id": "local_state", "name": "/state/local", "type": "nav_msgs/msg/Odometry", "direction": "produces"}
+      ],
+      "verification": [
+        {"kind": "build", "evidence": ["ci/localization_build.log"]},
+        {"kind": "unit", "evidence": ["tests/localization_unit.py"]}
+      ]
+    }
+  ]
+}

@@ -1,0 +1,28 @@
+{
+  "schema_version": 1,
+  "requirements": [
+    {
+      "id": "REQ-001",
+      "priority": "P1",
+      "status": "complete",
+      "module_refs": ["navigation", "safety_mux", "base_driver"],
+      "interface_refs": ["navigation.cmd_request", "safety_mux.safe_command", "base_driver.command"],
+      "verification": [
+        {
+          "id": "TEST-001",
+          "level": "integration_sim",
+          "status": "passed",
+          "evidence": ["results/navigation_acceptance.json"]
+        }
+      ]
+    },
+    {
+      "id": "REQ-002",
+      "priority": "P2",
+      "status": "partial",
+      "module_refs": ["localization", "base_driver"],
+      "interface_refs": ["base_driver.wheel_state", "localization.local_state"],
+      "verification": []
+    }
+  ]
+}
