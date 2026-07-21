@@ -1,0 +1,24 @@
+{
+  "schema_version": 1,
+  "actions": [
+    {
+      "goal_id": "test-goal-001",
+      "action": "/navigate_to_pose",
+      "source": "waypoint_loop",
+      "status": "succeeded",
+      "started_at": "2026-07-20T00:00:00Z",
+      "finished_at": "2026-07-20T00:00:09Z",
+      "evidence": ["artifacts/actions/test-goal-001.json"]
+    },
+    {
+      "goal_id": "test-goal-002",
+      "action": "/navigate_to_pose",
+      "source": "operator_goal",
+      "status": "canceled",
+      "started_at": "2026-07-20T00:01:00Z",
+      "finished_at": "2026-07-20T00:01:03Z",
+      "cancel_requested_by": "emergency_stop",
+      "evidence": ["artifacts/actions/test-goal-002.json"]
+    }
+  ]
+}

@@ -22,6 +22,9 @@ INTEGRATION = REPO / "tests" / "fixtures" / "integration"
 INTEGRATION_MANIFEST = INTEGRATION / "module_manifest.json"
 INTEGRATION_CONTRACT = INTEGRATION / "integration_contract.json"
 REQUIREMENTS_TRACE = INTEGRATION / "requirements_trace.json"
+RUNTIME_EVIDENCE = REPO / "tests" / "fixtures" / "runtime_evidence"
+RUNTIME_OBSERVATION = RUNTIME_EVIDENCE / "runtime_observation.json"
+ACTION_TRACE = RUNTIME_EVIDENCE / "action_trace.json"
 
 
 def run_script(name: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -309,6 +312,39 @@ class SkillScriptTests(unittest.TestCase):
         self.assertIn("graph.missing_role", codes)
         self.assertIn("graph.unreachable_flow", codes)
 
+    def test_runtime_observation_rejects_dead_branches_and_unmet_rates(self) -> None:
+        valid = run_script(
+            "validate_runtime_observation.py", str(RUNTIME_OBSERVATION), "--require-ran"
+        )
+        self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+        self.assertTrue(json.loads(valid.stdout)["observed_ready"])
+        observation = json.loads(RUNTIME_OBSERVATION.read_text(encoding="utf-8"))
+        observation["critical_flows"][0]["components"].remove("velocity_smoother")
+        observation["topics"][0]["observed_hz"] = 3.0
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "bad_observation.json"
+            path.write_text(json.dumps(observation), encoding="utf-8")
+            failed = run_script("validate_runtime_observation.py", str(path), "--require-ran")
+        self.assertEqual(failed.returncode, 1)
+        codes = {item["code"] for item in json.loads(failed.stdout)["errors"]}
+        self.assertIn("runtime.dead_branch", codes)
+        self.assertIn("runtime.rate_below_minimum", codes)
+
+    def test_action_trace_requires_terminal_evidence_and_abort_details(self) -> None:
+        valid = run_script("validate_action_trace.py", str(ACTION_TRACE), "--require-terminal")
+        self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+        self.assertTrue(json.loads(valid.stdout)["terminal_ready"])
+        trace = json.loads(ACTION_TRACE.read_text(encoding="utf-8"))
+        trace["actions"][0]["status"] = "aborted"
+        with tempfile.TemporaryDirectory() as temp:
+            path = Path(temp) / "aborted_without_details.json"
+            path.write_text(json.dumps(trace), encoding="utf-8")
+            failed = run_script("validate_action_trace.py", str(path), "--require-terminal")
+        self.assertEqual(failed.returncode, 1)
+        codes = {item["code"] for item in json.loads(failed.stdout)["errors"]}
+        self.assertIn("action.error_code", codes)
+        self.assertIn("action.error_message", codes)
+
     def test_module_manifest_candidate_generation_and_driver_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -401,6 +437,8 @@ class SkillScriptTests(unittest.TestCase):
         for link in links:
             self.assertTrue((SKILL / link).is_file(), link)
         self.assertTrue((SKILL / "references" / "secondary-development-and-integration.md").is_file())
+        self.assertTrue((SKILL / "references" / "wheeled-robot-problem-taxonomy.md").is_file())
+        self.assertTrue((SKILL / "references" / "runtime-evidence-and-regression.md").is_file())
 
     def test_openai_metadata_mentions_skill(self) -> None:
         metadata = (SKILL / "agents" / "openai.yaml").read_text(encoding="utf-8")

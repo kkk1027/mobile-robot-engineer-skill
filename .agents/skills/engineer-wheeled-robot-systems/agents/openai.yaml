@@ -1,4 +1,4 @@
 interface:
   display_name: "轮式机器人工程师"
-  short_description: "构建、集成、验证并迭代 ROS 轮式机器人产品闭环"
-  default_prompt: "使用 $engineer-wheeled-robot-systems，盘点已有 ROS 驱动/功能包并将其安全集成为满足客户需求的轮式机器人产品；必要时补齐单功能开发、测试与整机验证。"
+  short_description: "诊断、构建、集成并验证 ROS 轮式机器人软件闭环"
+  default_prompt: "使用 $engineer-wheeled-robot-systems，诊断或构建一个 ROS 轮式机器人闭环，并给出运行证据、故障注入和安全边界。"

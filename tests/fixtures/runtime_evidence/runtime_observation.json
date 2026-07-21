@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "profile": {
+    "name": "headless",
+    "kind": "simulation",
+    "execution": "ran",
+    "wall_clock_window_s": 15,
+    "measurement_source": "artifacts/runtime/headless_summary.json",
+    "real_time_factor": 0.95,
+    "min_real_time_factor": 0.8
+  },
+  "components": [
+    {"name": "controller_server", "state": "active", "disposition": "in_critical_flow"},
+    {"name": "velocity_smoother", "state": "active", "disposition": "in_critical_flow"},
+    {"name": "command_supervisor", "state": "active", "disposition": "in_critical_flow"},
+    {"name": "sim_base", "state": "active", "disposition": "in_critical_flow"},
+    {"name": "state_estimator", "state": "active", "disposition": "in_critical_flow"},
+    {"name": "runtime_monitor", "state": "active", "disposition": "observability_only"}
+  ],
+  "topics": [
+    {"name": "/cmd_vel_nav", "publishers": ["controller_server"], "subscribers": ["velocity_smoother"], "required_min_hz": 10.0, "observed_hz": 12.0, "measurement_source": "artifacts/runtime/topic_hz.txt"},
+    {"name": "/cmd_vel_filtered", "publishers": ["velocity_smoother"], "subscribers": ["command_supervisor"], "required_min_hz": 10.0, "observed_hz": 12.0, "measurement_source": "artifacts/runtime/topic_hz.txt"},
+    {"name": "/cmd_vel_safe", "publishers": ["command_supervisor"], "subscribers": ["sim_base"], "required_min_hz": 10.0, "observed_hz": 12.0, "measurement_source": "artifacts/runtime/topic_hz.txt"},
+    {"name": "/wheel_odom", "publishers": ["sim_base"], "subscribers": ["state_estimator"], "required_min_hz": 20.0, "observed_hz": 21.0, "measurement_source": "artifacts/runtime/topic_hz.txt"}
+  ],
+  "critical_flows": [
+    {"name": "motion_to_feedback", "components": ["controller_server", "velocity_smoother", "command_supervisor", "sim_base", "state_estimator"]}
+  ],
+  "dynamic_tf": [
+    {"parent": "odom", "child": "base_link", "broadcasters": ["sim_base"]}
+  ]
+}

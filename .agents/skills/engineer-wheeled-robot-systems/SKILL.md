@@ -24,7 +24,8 @@ description: 设计、二次开发、集成、验证、诊断和迭代基于 ROS
 3. 识别底盘运动学。读取 [wheeled-kinematics.md](references/wheeled-kinematics.md)。
 4. 建立接口与所有权契约，再选择实现。读取 [ros-architecture-and-interfaces.md](references/ros-architecture-and-interfaces.md)。
 5. 若是单功能开发或功能集成，读取 [secondary-development-and-integration.md](references/secondary-development-and-integration.md)，按其中的模块清单、集成契约和需求追踪流程工作。
-6. 只读取当前任务需要的其余参考文件；不要一次加载全部资料。
+6. 若任务是排障、性能退化或验收失败，先按 [wheeled-robot-problem-taxonomy.md](references/wheeled-robot-problem-taxonomy.md) 归类，再提出最低风险的证伪检查；不要直接调参。
+7. 只读取当前任务需要的其余参考文件；不要一次加载全部资料。
 
 硬件与时序读取 [hardware-embedded-and-time.md](references/hardware-embedded-and-time.md)，仿真与 sim-to-real 读取 [description-simulation-and-sim2real.md](references/description-simulation-and-sim2real.md)，感知定位读取 [perception-localization-and-mapping.md](references/perception-localization-and-mapping.md)，决策控制读取 [decision-navigation-and-control.md](references/decision-navigation-and-control.md)。
 
@@ -52,8 +53,11 @@ description: 设计、二次开发、集成、验证、诊断和迭代基于 ROS
 4. 定义 Topic/Service/Action、TF、QoS、频率、时间源、生命周期、故障降级和唯一命令仲裁者。
 5. 先描述/TF，再底盘/里程计，再传感器/估计，再导航/决策，最后性能和安全验证。
 6. 对每个仿真或实机 profile 写 `runtime_graph.json`，验证运动请求到执行器、反馈到状态估计以及健康/授权门的可达闭环。
+7. L2 运行后记录 `runtime_observation.json`：实际节点/生命周期、发布订阅者、TF 所有者、QoS、墙钟频率、RTF、diagnostics 和 profile。任何 required active 组件都必须在关键流中，或显式标为 `observability_only`/`disabled`。
+8. 含导航、巡检、探索、回充或跟随任务时记录 `action_trace.json`，关联 goal、来源、取消、错误码、恢复和最终状态；不能只以“节点仍 active”判定任务成功。
+9. 为 L2 交付提供启动、TF/传感器、唯一最终命令/超时、任务 action、故障注入或性能阈值的自动集成测试；运行环境不可用时生成测试并标为 `planned`，不得声称已通过。
 
-使用 `validate_project_intake.py`、`validate_generation_trace.py`、`validate_robot_contract.py` 和 `validate_runtime_graph.py`。硬件合同必须同步传播到 URDF/Xacro、控制器、固件、状态估计、仿真和启动配置。
+使用 `validate_project_intake.py`、`validate_generation_trace.py`、`validate_robot_contract.py`、`validate_runtime_graph.py`、`validate_runtime_observation.py` 和 `validate_action_trace.py`。运行证据规则读取 [runtime-evidence-and-regression.md](references/runtime-evidence-and-regression.md)。硬件合同必须同步传播到 URDF/Xacro、控制器、固件、状态估计、仿真和启动配置。
 
 ## 单功能开发
 
@@ -79,7 +83,7 @@ description: 设计、二次开发、集成、验证、诊断和迭代基于 ROS
 6. 先以最小垂直切片集成：一个需求、必要传感、状态、决策/命令、安全、执行器反馈和验收测试。通过后再增加下一项能力。
 7. 按模块单测 → 仿真集成 → 故障注入 → 台架/HIL → 低速实机 → 客户场景验收升级。用证据更新需求状态；保留回滚版本。
 
-`runtime_graph.json` 仍用于检查运行闭环；`integration_contract.json` 用于检查模块之间的静态兼容性，二者不可互相替代。
+`runtime_graph.json` 仍用于检查设计期闭环；`runtime_observation.json` 用于检查已启动实例的实际连接、频率和性能；`integration_contract.json` 用于检查模块之间的静态兼容性。三者不可互相替代。
 
 ## 诊断与系统评审
 
@@ -94,6 +98,8 @@ description: 设计、二次开发、集成、验证、诊断和迭代基于 ROS
 - `validate_generation_trace.py`：检查输入事实在生成物中的处置和证据。
 - `validate_robot_contract.py`：检查运动学、TF、接口、频率和安全超时。
 - `validate_runtime_graph.py`：检查 profile 的请求—执行器—反馈—状态估计—安全门闭环。
+- `validate_runtime_observation.py`：检查实际运行 profile 的关键流、活跃组件处置、动态 TF 所有者、观测频率和 RTF。
+- `validate_action_trace.py`：检查导航/探索/跟随等 action 的来源、终态、取消和错误证据。
 - `create_module_manifest.py`：从源码清单生成可人工补全的模块资产清单。
 - `validate_module_manifest.py`：检查模块复用结论、修改边界、驱动基线和验证证据。
 - `validate_integration_contract.py`：检查模块连接、适配器、TF 所有权和唯一命令权威者。
@@ -104,4 +110,4 @@ description: 设计、二次开发、集成、验证、诊断和迭代基于 ROS
 
 ## 完成条件
 
-完成不是“每个包能编译”。只有当目标需求具备可追溯实现和验收证据、接口和运行图闭合、命令能安全停止、实机等级与证据一致时，才可以声明整机功能完成。未验证能力明确标为 `planned`、`partial` 或 `blocked`。
+完成不是“每个包能编译”或“所有节点 active”。只有当目标需求具备可追溯实现和验收证据、设计图和运行事实都闭合、关键 action 有终态、命令能安全停止、性能结论来自实测 profile、实机等级与证据一致时，才可以声明整机功能完成。未验证能力明确标为 `planned`、`partial` 或 `blocked`。

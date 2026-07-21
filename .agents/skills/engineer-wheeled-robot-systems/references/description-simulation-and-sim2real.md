@@ -56,11 +56,15 @@
 
 固定随机种子，保存世界、参数、软件版本、输入和验收指标。
 
-## 仿真运行图闸门
+## 仿真运行图与运行事实闸门
 
 L2 不以文件存在为判据。为仿真 profile 声明组件生产/消费接口并验证至少一条完整路径：测试/导航运动请求 → 唯一命令监督器 → 仿真执行器 → 轮式里程计 → 状态估计。机器人生成、传感器数据、健康门和仿真专用运动授权也必须有生产者与消费者。若真实硬件健康条件直接复用于仿真，必须提供等价仿真健康源；不得通过删除安全门让仿真“能动”。运行 `validate_runtime_graph.py` 后仍需实际启动和场景测试证据。
 
 `runtime_graph.json` 的每个 profile 至少包含 `target_level`、`components`、`required_gate_topics` 和 `required_flows`。组件写明 `name`、`roles`、`consumes`、`produces`；L2 的标准角色是 `robot_spawn`、`motion_source`、`command_supervisor`、`actuator`、`feedback`、`state_estimation`、`health_gate` 和 `motion_authorizer`。例如必达流可写为 `{"name":"motion_feedback","from":"/motion/request","to":"/state/local"}`。
+
+实际启动后再写 `runtime_observation.json` 并运行 `validate_runtime_observation.py --require-ran`。对每个 `active` 且 `in_critical_flow` 的组件，观测记录必须证明其输入输出连接到关键路径；启动但输出无人消费的平滑器、滤波器或安全器是失败，不得因为最终底盘仍能运动而忽略。`headless` 与 `gui` 是不同 profile：分别记录 RTF、墙钟频率、采样窗口和资源观测。配置的 `update_rate`、传感器频率或发布率不是验收测量值。
+
+任务型仿真还要保存 `action_trace.json`。每个 terminal action 必须有 goal ID、来源、终态和结束时间；`aborted` 需要错误码/消息，`canceled` 需要取消来源。仅有 lifecycle 为 active 或日志中未见 traceback 不能证明任务完成。详细 schema 与 L2 回归最小集见 [runtime-evidence-and-regression.md](runtime-evidence-and-regression.md)。
 
 ## Sim-to-Real 闭环
 

@@ -1,5 +1,7 @@
 # 诊断与验证
 
+先读取 [wheeled-robot-problem-taxonomy.md](wheeled-robot-problem-taxonomy.md)，把现象归入命令/控制、运动学、TF/时间、定位、导航 action、障碍接管、QoS/网络、驱动、性能、仿真、配置或回归测试类别。一个现象可属于多个类别，但每次检查必须说明要证伪哪一个假设。
+
 ## 证据包
 
 最小证据包括：
@@ -61,6 +63,8 @@
 - 测量频率、延迟、jitter、TF age 和资源。
 - 在仿真中注入掉线、延迟、传感器异常和障碍。
 - 实机按 G2→G3→G4 升级。
+
+运行后写 `runtime_observation.json`，不要只保存终端截屏。对于关键路径记录实际发布者、订阅者、观测频率和墙钟采样窗口；对仿真记录 RTF；对动态 TF 记录唯一广播者；对导航/探索/跟随记录 action 的 goal、来源、终态、取消原因和错误码。运行 `validate_runtime_observation.py --require-ran` 与 `validate_action_trace.py --require-terminal`。
 
 ## 回归
 
