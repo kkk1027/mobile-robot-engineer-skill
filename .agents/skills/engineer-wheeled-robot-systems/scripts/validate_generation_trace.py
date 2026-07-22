@@ -13,7 +13,7 @@ from pathlib import Path
 from typing import Any, Iterable
 
 
-DISPOSITIONS = {"used", "question", "blocked", "intentionally_unused"}
+DISPOSITIONS = {"used", "question", "blocked", "intentionally_unused", "overridden"}
 UNSAFE_PROVENANCE = re.compile(r"(?:test_default|test_assumption|unresolved|conflict)", re.I)
 SECRET_KEY = re.compile(r"(?:password|passwd|token|secret|api[_-]?key|private[_-]?key)", re.I)
 SAFE_UNRESOLVED_SCOPES = {"simulation_only", "bench_only", "documentation_only", "blocked_real"}
@@ -81,7 +81,7 @@ def validate(intake_path: Path, trace: dict[str, Any], project_root: Path | None
         if disposition not in DISPOSITIONS:
             issues.append({"code": "trace.disposition", "path": path, "message": "invalid disposition"})
             continue
-        if disposition == "used":
+        if disposition in {"used", "overridden"}:
             evidence = record.get("evidence")
             if not isinstance(evidence, list) or not evidence:
                 issues.append({"code": "trace.used_evidence", "path": path, "message": "used fact needs generated-file evidence"})
@@ -92,6 +92,13 @@ def validate(intake_path: Path, trace: dict[str, Any], project_root: Path | None
             if fact.provenance and UNSAFE_PROVENANCE.search(fact.provenance):
                 if record.get("scope") not in SAFE_UNRESOLVED_SCOPES:
                     issues.append({"code": "trace.unsafe_scope", "path": path, "message": "unsafe provenance used without a non-real scope"})
+            if disposition == "overridden":
+                authorization = record.get("authorization")
+                if not isinstance(authorization, dict) or authorization.get("kind") != "user_explicit" or not str(authorization.get("record", "")).strip():
+                    issues.append({"code": "trace.override_authorization", "path": path, "message": "overridden fact needs an explicit user authorization record"})
+                for key in ("reason", "replacement", "impact"):
+                    if not str(record.get(key, "")).strip():
+                        issues.append({"code": f"trace.override_{key}", "path": path, "message": f"overridden fact needs {key}"})
         elif disposition == "question" and not str(record.get("question", "")).strip():
             issues.append({"code": "trace.question", "path": path, "message": "question disposition needs a question"})
         elif disposition in {"blocked", "intentionally_unused"} and not str(record.get("reason", "")).strip():

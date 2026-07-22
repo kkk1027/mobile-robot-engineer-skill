@@ -94,6 +94,8 @@ scripts/validate_robot_contract.py
 scripts/validate_runtime_graph.py
 scripts/validate_runtime_observation.py
 scripts/validate_action_trace.py
+scripts/validate_fault_injection.py
+scripts/validate_evidence_bundle.py
 ```
 
 以当前仓库中的测试为例：

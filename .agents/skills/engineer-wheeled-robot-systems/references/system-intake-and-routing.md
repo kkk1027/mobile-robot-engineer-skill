@@ -2,13 +2,14 @@
 
 ## 输入容器
 
-用户只提供“硬件设备、技术栈、项目方向”是合理的，但这三项是信息容器，不是固定的三个字符串。为了构建完整项目，容器内部必须能回答会改变架构、安全或实机接口的问题。另用 `execution_boundary` 记录访问权限、部署目标和实机运动授权。
+用户只提供“硬件设备、技术栈、项目方向”是合理的，但这三项是信息容器，不是固定的三个字符串。为了构建完整项目，容器内部必须能回答会改变架构、安全或实机接口的问题。另用 `execution_boundary` 记录访问权限、部署目标和实机运动授权；用 `authorized_overrides` 记录用户后来明确批准的模型、参数或接口替换。
 
 建议把输入保存为 JSON，并为来源不直观的值附上 `provenance`：
 
 - `user_confirmed`：用户明确确认。
 - `source_confirmed`：从获准读取的源码、配置或硬件文档确认。
 - `measured`：通过可复现测量确认，并记录测量方法。
+- `user_override`：用户明确同意用替代模型、参数或接口覆盖既有输入；必须保留原输入、授权记录、理由和影响。
 - `test_default_simulation_only`：仅用于仿真测试。
 - `test_default_bench_only`：仅用于断开动力或受控台架测试。
 - `unresolved`：尚未确认。
@@ -42,8 +43,8 @@
 3. 运行 `validate_project_intake.py`，生成交付等级、缺口和问题。
 4. 只询问会改变当前目标等级的问题。一次按“运动与驱动、安全与供电、传感器与标定、软件与验收”的顺序给出成组问题。
 5. 用户允许测试默认值时，逐项标注来源和适用范围；不能用默认值推断电机引脚语义、驱动真值表、制动逻辑或电气安全链。
-6. 补全后再次验证，冻结输入文件及其 SHA-256，再开始独立生成。
-7. 生成时维护逐事实处置表：`used` 必须指向产物证据；`question` 写明问题；`blocked` 和 `intentionally_unused` 写明原因。测试默认值被使用时必须标出 `simulation_only`、`bench_only`、`documentation_only` 或 `blocked_real` 范围。
+6. 补全后再次验证，冻结输入文件及其 SHA-256，再开始独立生成。若用户随后改变模型、几何、接口或验收，追加 `authorized_overrides`，不要篡改冻结输入。
+7. 生成时维护逐事实处置表：`used` 必须指向产物证据；`question` 写明问题；`blocked` 和 `intentionally_unused` 写明原因；`overridden` 必须写明用户授权记录、替代值、理由、影响和证据。测试默认值被使用时必须标出 `simulation_only`、`bench_only`、`documentation_only` 或 `blocked_real` 范围。
 8. 运行 `validate_generation_trace.py`；任何已确认硬件、接口、版本、目标或边界没有处置记录时，不得冻结产物。
 
 最小追踪格式：
@@ -60,6 +61,14 @@
     "hardware_devices.drive.driver_truth_table": {
       "disposition": "blocked",
       "reason": "实机极性和制动语义未确认"
+    },
+    "hardware_devices.base.type": {
+      "disposition": "overridden",
+      "authorization": {"kind": "user_explicit", "record": "用户要求采用官方参考模型"},
+      "replacement": "官方差速参考模型",
+      "reason": "用于仿真快速验证",
+      "impact": "轮数和几何以替代模型为准",
+      "evidence": ["robot_contract.json"]
     }
   }
 }
@@ -76,7 +85,7 @@
 - 通信：UART、CAN/CAN-FD、USB、Ethernet、EtherCAT、DDS 域和网络拓扑。
 - 供电与安全：电池/电源、保险和限流、欠压阈值、物理急停、安全继电器、看门狗、制动和失联停机路径。
 - 软件：ROS 发行版、C++/Python、驱动/算法包、仿真器、容器和构建系统。
-- 部署：仿真、台架、实机或组合；目标主机、SSH 范围、是否允许安装、部署、重启和运动。
+- 部署：仿真、台架、实机或组合；目标主机、SSH 范围、是否允许安装、部署、重启和运动。用户可明确授权通过 SSH 访问隔离仿真 VM；这仍属于 G1，必须限定主机和项目目录，不得推断为实机或外部账户授权。
 - 产品边界：许可证、是否公开、凭据注入方式、日志与隐私要求、交付与回滚方式。
 - 验收：构建、仿真、故障注入、HIL、低速实机和任务级指标。
 

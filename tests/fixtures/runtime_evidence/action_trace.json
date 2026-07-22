@@ -8,7 +8,12 @@
       "status": "succeeded",
       "started_at": "2026-07-20T00:00:00Z",
       "finished_at": "2026-07-20T00:00:09Z",
-      "evidence": ["artifacts/actions/test-goal-001.json"]
+      "evidence": ["artifacts/actions/test-goal-001.json"],
+      "process_completion": {
+        "mode": "controlled_shutdown",
+        "reason": "finite client keeps its ROS spin loop after terminal action",
+        "evidence": ["artifacts/actions/test-goal-001-shutdown.log"]
+      }
     },
     {
       "goal_id": "test-goal-002",

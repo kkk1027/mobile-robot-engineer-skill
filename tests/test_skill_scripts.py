@@ -25,6 +25,7 @@ REQUIREMENTS_TRACE = INTEGRATION / "requirements_trace.json"
 RUNTIME_EVIDENCE = REPO / "tests" / "fixtures" / "runtime_evidence"
 RUNTIME_OBSERVATION = RUNTIME_EVIDENCE / "runtime_observation.json"
 ACTION_TRACE = RUNTIME_EVIDENCE / "action_trace.json"
+FAULT_INJECTION_TRACE = RUNTIME_EVIDENCE / "fault_injection_trace.json"
 
 
 def run_script(name: str, *args: str) -> subprocess.CompletedProcess[str]:
@@ -276,6 +277,37 @@ class SkillScriptTests(unittest.TestCase):
         self.assertEqual(failed.returncode, 1)
         self.assertIn("trace.missing_fact", {item["code"] for item in json.loads(failed.stdout)["issues"]})
 
+    def test_generation_trace_requires_explicit_authorization_for_overrides(self) -> None:
+        intake = {"allowed_input": {"base_type": "four-wheel differential"}}
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            intake_path = root / "intake.json"
+            contract = root / "robot_contract.json"
+            intake_path.write_text(json.dumps(intake), encoding="utf-8")
+            contract.write_text("{}", encoding="utf-8")
+            trace = {
+                "intake_sha256": hashlib.sha256(intake_path.read_bytes()).hexdigest(),
+                "facts": {
+                    "base_type": {
+                        "disposition": "overridden",
+                        "authorization": {"kind": "user_explicit", "record": "user selected an official reference model"},
+                        "reason": "use a maintained reference model for simulation",
+                        "replacement": "official differential reference model",
+                        "impact": "wheel count and geometry follow the selected model",
+                        "evidence": ["robot_contract.json"],
+                    }
+                },
+            }
+            trace_path = root / "trace.json"
+            trace_path.write_text(json.dumps(trace), encoding="utf-8")
+            valid = run_script("validate_generation_trace.py", str(intake_path), str(trace_path), "--project-root", str(root))
+            self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+            trace["facts"]["base_type"].pop("authorization")
+            trace_path.write_text(json.dumps(trace), encoding="utf-8")
+            failed = run_script("validate_generation_trace.py", str(intake_path), str(trace_path))
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn("trace.override_authorization", {item["code"] for item in json.loads(failed.stdout)["issues"]})
+
     def test_runtime_graph_requires_reachable_l2_closed_loop(self) -> None:
         graph = {
             "profiles": {
@@ -314,7 +346,7 @@ class SkillScriptTests(unittest.TestCase):
 
     def test_runtime_observation_rejects_dead_branches_and_unmet_rates(self) -> None:
         valid = run_script(
-            "validate_runtime_observation.py", str(RUNTIME_OBSERVATION), "--require-ran"
+            "validate_runtime_observation.py", str(RUNTIME_OBSERVATION), "--require-ran", "--require-complete"
         )
         self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
         self.assertTrue(json.loads(valid.stdout)["observed_ready"])
@@ -330,6 +362,29 @@ class SkillScriptTests(unittest.TestCase):
         self.assertIn("runtime.dead_branch", codes)
         self.assertIn("runtime.rate_below_minimum", codes)
 
+    def test_runtime_observation_reports_missing_required_coverage_and_action_graph(self) -> None:
+        observation = json.loads(RUNTIME_OBSERVATION.read_text(encoding="utf-8"))
+        observation["profile"]["claim"] = "partial"
+        observation["required_topics"].append({"name": "/image_raw", "min_hz": 10.0})
+        empty_coverage = json.loads(RUNTIME_OBSERVATION.read_text(encoding="utf-8"))
+        empty_coverage["required_topics"] = []
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            path = root / "partial_observation.json"
+            empty_path = root / "empty_coverage.json"
+            path.write_text(json.dumps(observation), encoding="utf-8")
+            empty_path.write_text(json.dumps(empty_coverage), encoding="utf-8")
+            partial = run_script("validate_runtime_observation.py", str(path), "--require-ran")
+            strict = run_script("validate_runtime_observation.py", str(path), "--require-ran", "--require-complete")
+            empty = run_script("validate_runtime_observation.py", str(empty_path), "--require-ran", "--require-complete")
+        self.assertEqual(partial.returncode, 0, partial.stdout + partial.stderr)
+        self.assertFalse(json.loads(partial.stdout)["required_topic_coverage_complete"])
+        self.assertEqual(strict.returncode, 1)
+        codes = {item["code"] for item in json.loads(strict.stdout)["errors"]}
+        self.assertIn("runtime.required_topic_missing", codes)
+        self.assertEqual(empty.returncode, 1)
+        self.assertIn("runtime.required_topics_empty", {item["code"] for item in json.loads(empty.stdout)["errors"]})
+
     def test_action_trace_requires_terminal_evidence_and_abort_details(self) -> None:
         valid = run_script("validate_action_trace.py", str(ACTION_TRACE), "--require-terminal")
         self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
@@ -344,6 +399,57 @@ class SkillScriptTests(unittest.TestCase):
         codes = {item["code"] for item in json.loads(failed.stdout)["errors"]}
         self.assertIn("action.error_code", codes)
         self.assertIn("action.error_message", codes)
+
+    def test_action_trace_checks_controlled_shutdown_and_faults_under_motion(self) -> None:
+        valid_fault = run_script(
+            "validate_fault_injection.py", str(FAULT_INJECTION_TRACE), "--require-ran", "--require-passed"
+        )
+        self.assertEqual(valid_fault.returncode, 0, valid_fault.stdout + valid_fault.stderr)
+        trace = json.loads(ACTION_TRACE.read_text(encoding="utf-8"))
+        trace["actions"][0]["process_completion"].pop("reason")
+        fault = json.loads(FAULT_INJECTION_TRACE.read_text(encoding="utf-8"))
+        fault["cases"][0]["motion_observed_before_trigger"] = False
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            action_path = root / "bad_action.json"
+            fault_path = root / "bad_fault.json"
+            action_path.write_text(json.dumps(trace), encoding="utf-8")
+            fault_path.write_text(json.dumps(fault), encoding="utf-8")
+            bad_action = run_script("validate_action_trace.py", str(action_path), "--require-terminal")
+            bad_fault = run_script("validate_fault_injection.py", str(fault_path), "--require-ran", "--require-passed")
+        self.assertEqual(bad_action.returncode, 1)
+        self.assertIn("action.shutdown_reason", {item["code"] for item in json.loads(bad_action.stdout)["errors"]})
+        self.assertEqual(bad_fault.returncode, 1)
+        self.assertIn("fault.motion_precondition", {item["code"] for item in json.loads(bad_fault.stdout)["errors"]})
+
+    def test_evidence_bundle_requires_hashes_and_referenced_files(self) -> None:
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            artifacts = root / "artifacts"
+            evidence = root / "evidence"
+            artifacts.mkdir()
+            evidence.mkdir()
+            probe = artifacts / "probe.json"
+            action = evidence / "action_trace.json"
+            probe.write_text("{}", encoding="utf-8")
+            action.write_text(json.dumps({"actions": [{"evidence": ["artifacts/probe.json"]}]}), encoding="utf-8")
+            manifest = {
+                "schema_version": 1,
+                "files": [
+                    {"path": "artifacts/probe.json", "sha256": hashlib.sha256(probe.read_bytes()).hexdigest()},
+                    {"path": "evidence/action_trace.json", "sha256": hashlib.sha256(action.read_bytes()).hexdigest()},
+                ],
+            }
+            manifest_path = root / "evidence_manifest.json"
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            valid = run_script("validate_evidence_bundle.py", str(manifest_path), "--root", str(root), "--scan", "evidence/action_trace.json")
+            self.assertEqual(valid.returncode, 0, valid.stdout + valid.stderr)
+            action.write_text(json.dumps({"actions": [{"evidence": ["artifacts/missing.json"]}]}), encoding="utf-8")
+            manifest["files"][1]["sha256"] = hashlib.sha256(action.read_bytes()).hexdigest()
+            manifest_path.write_text(json.dumps(manifest), encoding="utf-8")
+            failed = run_script("validate_evidence_bundle.py", str(manifest_path), "--root", str(root), "--scan", "evidence/action_trace.json")
+        self.assertEqual(failed.returncode, 1)
+        self.assertIn("bundle.reference_missing", {item["code"] for item in json.loads(failed.stdout)["errors"]})
 
     def test_module_manifest_candidate_generation_and_driver_baseline(self) -> None:
         with tempfile.TemporaryDirectory() as temp:

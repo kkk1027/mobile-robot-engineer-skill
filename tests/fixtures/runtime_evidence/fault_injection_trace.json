@@ -1,0 +1,19 @@
+{
+  "schema_version": 1,
+  "profile": {
+    "name": "headless",
+    "execution": "ran"
+  },
+  "cases": [
+    {
+      "id": "emergency_stop_under_motion",
+      "kind": "emergency_stop",
+      "status": "passed",
+      "motion_observed_before_trigger": true,
+      "safe_stop_observed": true,
+      "stop_latency_ms": 96,
+      "max_stop_latency_ms": 350,
+      "evidence": ["artifacts/faults/emergency_stop.json"]
+    }
+  ]
+}

@@ -3,6 +3,7 @@
   "profile": {
     "name": "headless",
     "kind": "simulation",
+    "claim": "complete",
     "execution": "ran",
     "wall_clock_window_s": 15,
     "measurement_source": "artifacts/runtime/headless_summary.json",
@@ -23,10 +24,17 @@
     {"name": "/cmd_vel_safe", "publishers": ["command_supervisor"], "subscribers": ["sim_base"], "required_min_hz": 10.0, "observed_hz": 12.0, "measurement_source": "artifacts/runtime/topic_hz.txt"},
     {"name": "/wheel_odom", "publishers": ["sim_base"], "subscribers": ["state_estimator"], "required_min_hz": 20.0, "observed_hz": 21.0, "measurement_source": "artifacts/runtime/topic_hz.txt"}
   ],
+  "required_topics": [
+    {"name": "/cmd_vel_safe", "min_hz": 10.0},
+    {"name": "/wheel_odom", "min_hz": 20.0}
+  ],
   "critical_flows": [
     {"name": "motion_to_feedback", "components": ["controller_server", "velocity_smoother", "command_supervisor", "sim_base", "state_estimator"]}
   ],
   "dynamic_tf": [
     {"parent": "odom", "child": "base_link", "broadcasters": ["sim_base"]}
+  ],
+  "actions": [
+    {"name": "/navigate_to_pose", "clients": ["controller_server"], "servers": ["controller_server"], "measurement_source": "artifacts/runtime/action_graph.json"}
   ]
 }

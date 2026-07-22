@@ -13,6 +13,7 @@ from typing import Any
 
 DISPOSITIONS = {"in_critical_flow", "observability_only", "disabled"}
 EXECUTIONS = {"ran", "not_run"}
+CLAIMS = {"complete", "partial", "planned"}
 
 
 def configure_stdio() -> None:
@@ -47,7 +48,7 @@ def nonnegative_number(value: Any) -> bool:
     return isinstance(value, (int, float)) and not isinstance(value, bool) and value >= 0
 
 
-def validate(data: dict[str, Any], require_ran: bool) -> dict[str, Any]:
+def validate(data: dict[str, Any], require_ran: bool, require_complete: bool) -> dict[str, Any]:
     errors: list[dict[str, str]] = []
     warnings: list[dict[str, str]] = []
     profile = data.get("profile")
@@ -56,12 +57,15 @@ def validate(data: dict[str, Any], require_ran: bool) -> dict[str, Any]:
     profile_name = str(profile.get("name", "")).strip()
     execution = str(profile.get("execution", "")).strip()
     kind = str(profile.get("kind", "")).strip()
+    claim = str(profile.get("claim", "")).strip()
     if not profile_name:
         errors.append(issue("runtime.profile_name", "profile.name", "profile needs a name"))
     if execution not in EXECUTIONS:
         errors.append(issue("runtime.execution", "profile.execution", "execution must be ran or not_run"))
     if not kind:
         errors.append(issue("runtime.profile_kind", "profile.kind", "profile needs a kind"))
+    if claim and claim not in CLAIMS:
+        errors.append(issue("runtime.profile_claim", "profile.claim", "claim must be complete, partial, or planned"))
     ran = execution == "ran"
     if ran:
         if not positive_number(profile.get("wall_clock_window_s")):
@@ -111,6 +115,7 @@ def validate(data: dict[str, Any], require_ran: bool) -> dict[str, Any]:
         raise ValueError("topics must be a list")
     connections: dict[tuple[str, str], list[str]] = defaultdict(list)
     topic_results: list[dict[str, Any]] = []
+    observed_topics: dict[str, dict[str, Any]] = {}
     seen_topics: set[str] = set()
     for index, topic in enumerate(topics):
         path = f"topics[{index}]"
@@ -126,6 +131,7 @@ def validate(data: dict[str, Any], require_ran: bool) -> dict[str, Any]:
         if name in seen_topics:
             errors.append(issue("runtime.duplicate_topic", path, "topic name must be unique"))
         seen_topics.add(name)
+        observed_topics[name] = topic
         if publishers is None or not publishers:
             errors.append(issue("runtime.publishers", f"{path}.publishers", "topic needs observed publishers"))
             publishers = []
@@ -150,6 +156,53 @@ def validate(data: dict[str, Any], require_ran: bool) -> dict[str, Any]:
             if positive_number(required_min_hz) and nonnegative_number(observed_hz) and observed_hz < required_min_hz:
                 errors.append(issue("runtime.rate_below_minimum", f"{path}.observed_hz", "observed frequency is below declared minimum"))
         topic_results.append({"name": name, "publishers": publishers, "subscribers": subscribers})
+
+    coverage_gaps: list[dict[str, str]] = []
+    required_topics = data.get("required_topics", [])
+    if not isinstance(required_topics, list):
+        raise ValueError("required_topics must be a list")
+    if (require_complete or claim == "complete") and not required_topics:
+        errors.append(issue("runtime.required_topics_empty", "required_topics", "complete acceptance needs at least one declared required topic"))
+    required_names: set[str] = set()
+    for index, requirement in enumerate(required_topics):
+        path = f"required_topics[{index}]"
+        if not isinstance(requirement, dict):
+            errors.append(issue("runtime.required_topic", path, "required topic must be an object"))
+            continue
+        name = str(requirement.get("name", "")).strip()
+        min_hz = requirement.get("min_hz")
+        if not name:
+            errors.append(issue("runtime.required_topic_name", f"{path}.name", "required topic needs a name"))
+            continue
+        if name in required_names:
+            errors.append(issue("runtime.duplicate_required_topic", f"{path}.name", "required topic name must be unique"))
+            continue
+        required_names.add(name)
+        if min_hz is not None and not positive_number(min_hz):
+            errors.append(issue("runtime.required_topic_rate", f"{path}.min_hz", "required topic minimum frequency must be positive"))
+            continue
+        observed = observed_topics.get(name)
+        gap: dict[str, str] | None = None
+        if observed is None:
+            gap = issue("runtime.required_topic_missing", f"{path}.name", f"required topic {name} is not observed in this profile")
+        elif ran:
+            observed_hz = observed.get("observed_hz")
+            if not nonnegative_number(observed_hz):
+                gap = issue("runtime.required_topic_unmeasured", f"topics.{name}.observed_hz", f"required topic {name} needs a measured frequency")
+            elif positive_number(min_hz) and observed_hz < min_hz:
+                gap = issue("runtime.required_topic_below_minimum", f"topics.{name}.observed_hz", f"required topic {name} is below its declared minimum")
+            elif not str(observed.get("measurement_source", "")).strip():
+                gap = issue("runtime.required_topic_evidence", f"topics.{name}.measurement_source", f"required topic {name} needs measurement evidence")
+        if gap is not None:
+            coverage_gaps.append(gap)
+
+    for gap in coverage_gaps:
+        if require_complete:
+            errors.append(gap)
+        else:
+            warnings.append(gap)
+    if claim == "complete" and coverage_gaps:
+        errors.append(issue("runtime.claim_overstated", "profile.claim", "complete claim has unmet required topic coverage"))
 
     flows = data.get("critical_flows")
     if not isinstance(flows, list) or not flows:
@@ -183,6 +236,38 @@ def validate(data: dict[str, Any], require_ran: bool) -> dict[str, Any]:
         if state == "active" and disposition == "in_critical_flow" and name not in critical_components:
             errors.append(issue("runtime.dead_branch", f"components.{name}", "active critical component is not represented in any critical flow"))
 
+    actions = data.get("actions", [])
+    if not isinstance(actions, list):
+        raise ValueError("actions must be a list")
+    action_results: list[dict[str, Any]] = []
+    seen_actions: set[str] = set()
+    for index, action in enumerate(actions):
+        path = f"actions[{index}]"
+        if not isinstance(action, dict):
+            errors.append(issue("runtime.action", path, "action relation must be an object"))
+            continue
+        name = str(action.get("name", "")).strip()
+        clients = string_list(action.get("clients"))
+        servers = string_list(action.get("servers"))
+        if not name:
+            errors.append(issue("runtime.action_name", f"{path}.name", "action relation needs a name"))
+            continue
+        if name in seen_actions:
+            errors.append(issue("runtime.duplicate_action", f"{path}.name", "action relation name must be unique"))
+        seen_actions.add(name)
+        if clients is None or not clients:
+            errors.append(issue("runtime.action_clients", f"{path}.clients", "action relation needs observed clients"))
+            clients = []
+        if servers is None or not servers:
+            errors.append(issue("runtime.action_servers", f"{path}.servers", "action relation needs observed servers"))
+            servers = []
+        unknown = sorted(set(clients + servers) - set(component_state))
+        if unknown:
+            errors.append(issue("runtime.action_component", path, f"action relation references unknown components: {', '.join(unknown)}"))
+        if ran and not str(action.get("measurement_source", "")).strip():
+            errors.append(issue("runtime.action_measurement_source", f"{path}.measurement_source", "ran action relation needs measurement evidence"))
+        action_results.append({"name": name, "clients": clients, "servers": servers})
+
     tf_edges = data.get("dynamic_tf", [])
     if not isinstance(tf_edges, list):
         raise ValueError("dynamic_tf must be a list")
@@ -206,9 +291,12 @@ def validate(data: dict[str, Any], require_ran: bool) -> dict[str, Any]:
         "schema_version": 1,
         "ok": not errors,
         "observed_ready": ready,
-        "profile": {"name": profile_name, "kind": kind, "execution": execution},
+        "profile": {"name": profile_name, "kind": kind, "execution": execution, "claim": claim or None},
         "topics": topic_results,
+        "required_topic_coverage_complete": not coverage_gaps,
+        "required_topic_coverage_gaps": coverage_gaps,
         "critical_flows": flow_results,
+        "actions": action_results,
         "errors": errors,
         "warnings": warnings,
     }
@@ -218,6 +306,7 @@ def parse_args(argv: list[str]) -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("observation", type=Path)
     parser.add_argument("--require-ran", action="store_true", help="fail unless profile execution is ran")
+    parser.add_argument("--require-complete", action="store_true", help="fail if a required topic is missing, unmeasured, or below its minimum")
     parser.add_argument("--output", type=Path)
     parser.add_argument("--pretty", action="store_true")
     return parser.parse_args(argv)
@@ -227,7 +316,7 @@ def main(argv: list[str] | None = None) -> int:
     configure_stdio()
     args = parse_args(argv or sys.argv[1:])
     try:
-        result = validate(load_object(args.observation.resolve()), args.require_ran)
+        result = validate(load_object(args.observation.resolve()), args.require_ran, args.require_complete)
     except (OSError, ValueError, json.JSONDecodeError) as exc:
         print(json.dumps({"ok": False, "error": str(exc)}, ensure_ascii=False))
         return 2

@@ -12,6 +12,7 @@ from typing import Any
 
 STATUSES = {"succeeded", "canceled", "aborted", "active", "not_run"}
 TERMINAL = {"succeeded", "canceled", "aborted"}
+PROCESS_COMPLETIONS = {"exited", "controlled_shutdown", "long_running"}
 
 
 def configure_stdio() -> None:
@@ -85,7 +86,29 @@ def validate(data: dict[str, Any], require_terminal: bool) -> dict[str, Any]:
             warnings.append(issue("action.not_terminal", path, "action is not terminal and cannot prove task completion"))
             if require_terminal:
                 errors.append(issue("action.require_terminal", path, "this validation requires terminal action states"))
-        results.append({"goal_id": goal_id, "action": action, "source": source, "status": status})
+        completion = item.get("process_completion")
+        completion_mode: str | None = None
+        if completion is not None:
+            if not isinstance(completion, dict):
+                errors.append(issue("action.process_completion", f"{path}.process_completion", "process completion must be an object"))
+            else:
+                completion_mode = str(completion.get("mode", "")).strip()
+                if completion_mode not in PROCESS_COMPLETIONS:
+                    errors.append(issue("action.process_mode", f"{path}.process_completion.mode", "process completion mode is invalid"))
+                elif completion_mode == "exited":
+                    exit_code = completion.get("exit_code")
+                    if not isinstance(exit_code, int) or isinstance(exit_code, bool):
+                        errors.append(issue("action.exit_code", f"{path}.process_completion.exit_code", "exited process needs an integer exit code"))
+                elif completion_mode == "controlled_shutdown":
+                    if status not in TERMINAL:
+                        errors.append(issue("action.shutdown_terminal", f"{path}.process_completion", "controlled shutdown needs a terminal action state"))
+                    if not str(completion.get("reason", "")).strip():
+                        errors.append(issue("action.shutdown_reason", f"{path}.process_completion.reason", "controlled shutdown needs a reason"))
+                    if evidence_list(completion.get("evidence")) is None:
+                        errors.append(issue("action.shutdown_evidence", f"{path}.process_completion.evidence", "controlled shutdown needs evidence"))
+                elif completion_mode == "long_running":
+                    warnings.append(issue("action.long_running", f"{path}.process_completion", "long-running process exit does not establish task completion; use action terminal evidence"))
+        results.append({"goal_id": goal_id, "action": action, "source": source, "status": status, "process_completion": completion_mode})
     return {
         "schema_version": 1,
         "ok": not errors,
